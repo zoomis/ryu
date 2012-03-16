@@ -1,5 +1,5 @@
 # Copyright (C) 2011 Nippon Telegraph and Telephone Corporation.
-# Copyright (C) 2011 Isaku Yamahata <yamahata at valinux co jp>
+# Copyright (C) 2011,2012 Isaku Yamahata <yamahata at valinux co jp>
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -14,7 +14,14 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 NW_ID_EXTERNAL = '__NW_ID_EXTERNAL__'
+NW_ID_VPORT_GRE = '__NW_ID_VPORT_GRE__'
 NW_ID_UNKNOWN = '__NW_ID_UNKNOWN__'
+
+RESERVED_NETWORK_IDS = (
+    NW_ID_EXTERNAL,
+    NW_ID_VPORT_GRE,
+    NW_ID_UNKNOWN,
+    )
 
 # PORT_TYPE_VM = 'guestvm'
 # PORT_TYPE_GW = 'gateway'
