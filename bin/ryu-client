@@ -41,7 +41,11 @@ def client_test():
         'list_ports': lambda a: sys.stdout.write(client.get_ports(a[1])),
         'create_port': lambda a: client.create_port(a[1], a[2], a[3]),
         'update_port': lambda a: client.update_port(a[1], a[2], a[3]),
-        'delete_port': lambda a: client.delete_port(a[1], a[2], a[3])
+        'delete_port': lambda a: client.delete_port(a[1], a[2], a[3]),
+        'list_macs': lambda a: sys.stdout.write(
+            client.list_macs(a[1], a[2], a[3])),
+        'create_mac': lambda a: client.create_mac(a[1], a[2], a[3], a[4]),
+        'update_mac': lambda a: client.update_mac(a[1], a[2], a[3], a[4]),
         }
 
     # allow '-', instead of '_'
