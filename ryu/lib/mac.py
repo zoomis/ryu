@@ -13,6 +13,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+# Internal representation of mac address is string[6]
+_HADDR_LEN = 6
 
 DONTCARE = '\x00' * 6
 BROADCAST = '\xff' * 6
@@ -25,9 +27,17 @@ def is_multicast(addr):
 
 
 def haddr_to_str(addr):
-    return ''.join(['%02x:' % ord(char) for char in addr[0:6]])[:-1]
+    """Format mac address in internal representation into human readable
+    form"""
+    assert len(addr) == _HADDR_LEN
+    # [:-1] is to remove trailing ':'
+    return ''.join(['%02x:' % ord(char) for char in addr])[:-1]
 
 
 def haddr_to_bin(string):
-    return ''.join(['%c' % chr(int(i, 16)) for i in
-                    string.split(':')])
+    """Parse mac address string in human readable format into
+    internal representation"""
+    hexes = string.split(':')
+    if len(hexes) != _HADDR_LEN:
+        ValueError('Invalid format for mac address: %s' % string)
+    return ''.join([chr(int(h, 16)) for h in hexes])
