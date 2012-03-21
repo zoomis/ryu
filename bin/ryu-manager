@@ -32,6 +32,7 @@ from ryu.base.app_manager import AppManager
 from ryu.controller import controller
 from ryu.controller import dpset
 from ryu.controller import network
+from ryu.controller import tunnels
 
 
 FLAGS = gflags.FLAGS
@@ -48,11 +49,14 @@ def main():
     _args = FLAGS(sys.argv)
     log.init_log()
 
-    nw = network.Network()
-    dpset_ = dpset.create_dpset()
+    kwargs = {
+        'network': network.Network(),
+        'dpset': dpset.create_dpset(),
+        'tunnels': tunnels.Tunnels(),
+        }
 
     app_mgr = AppManager()
-    app_mgr.load_apps(FLAGS.app_lists, network=nw, dpset=dpset_)
+    app_mgr.load_apps(FLAGS.app_lists, **kwargs)
 
     services = []
 
