@@ -39,6 +39,7 @@ FLAGS = gflags.FLAGS
 gflags.DEFINE_multistring('app_lists',
                           ['ryu.app.simple_isolation.SimpleIsolation',
                            'ryu.app.rest.restapi',
+                           'ryu.app.rest_tunnel.GRETunnelController',
                            # 'ryu.app.event_dumper.EventDumper',
                            ],
                           'application module name to run')
