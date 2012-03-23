@@ -37,7 +37,10 @@ from ryu.controller import tunnels
 
 FLAGS = gflags.FLAGS
 gflags.DEFINE_multistring('app_lists',
-                          ['ryu.app.simple_isolation.SimpleIsolation',
+                          [
+                           # 'ryu.app.simple_isolation.SimpleIsolation',
+                           'ryu.app.gre_tunnel.GRETunnel',
+                           # 'ryu.app.gre_tunnel.PortSetDebug',
                            'ryu.app.rest.restapi',
                            'ryu.app.rest_tunnel.GRETunnelController',
                            # 'ryu.app.event_dumper.EventDumper',
