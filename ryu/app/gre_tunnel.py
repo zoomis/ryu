@@ -299,6 +299,7 @@ class PortSetDebug(object):
 class GRETunnel(object):
     """app for L2/L3 with gre tunneling"""
 
+    DEFAULT_COOKIE = 0
     TABLE_DEFAULT_PRPIRITY = 32768  # = ofproto.OFP_DEFAULT_PRIORITY
 
     SRC_TABLE = 0
@@ -360,12 +361,14 @@ class GRETunnel(object):
 
     def send_flow_mod(self, dp, rule, table, command, priority, actions):
         command = self._make_command(table, command)
-        dp.send_flow_mod(rule=rule, cookie=0, command=command, idle_timeout=0,
+        dp.send_flow_mod(rule=rule, cookie=self.DEFAULT_COOKIE,
+                         command=command, idle_timeout=0,
                          hard_timeout=0, priority=priority, actions=actions)
 
     def send_flow_del(self, dp, rule, table, command, priority, out_port):
         command = self._make_command(table, command)
-        dp.send_flow_mod(rule=rule, cookie=0, command=command, idle_timeout=0,
+        dp.send_flow_mod(rule=rule, cookie=self.DEFAULT_COOKIE,
+                         command=command, idle_timeout=0,
                          hard_timeout=0, priority=priority, out_port=out_port)
 
     def _list_tunnel_port(self, dp, remote_dpids):
@@ -704,9 +707,9 @@ class GRETunnel(object):
                         in_port=remote_ofproto.OFPP_IN_PORT,
                         table=self.LOCAL_OUT_TABLE)
                     actions.append(resubmit_table)
-                remote_dp.send_flow_mod(remote_dp, rule, self.TUNNEL_OUT_TABLE,
-                                        command, self.TUNNEL_OUT_PRI_BROADCAST,
-                                        actions)
+                self.send_flow_mod(remote_dp, rule, self.TUNNEL_OUT_TABLE,
+                                   command, self.TUNNEL_OUT_PRI_BROADCAST,
+                                   actions)
 
             rule = nx_match.ClsRule()
             rule.set_tun_id(tunnel_key)
