@@ -24,17 +24,16 @@ LOG = logging.getLogger('ryu.utils')
 
 
 def import_module(modname):
-    __import__(modname)
-    return sys.modules[modname]
-
-
-def import_object(modname):
     try:
-        return import_module(modname)
-    except ImportError:
-        (from_mod, _sep, target) = modname.rpartition('.')
-        mod = import_module(from_mod)
-        return getattr(mod, target)
+        __import__(modname)
+    except:
+        sys.path.append(os.path.dirname(os.path.abspath(modname)))
+        name = os.path.basename(modname)
+        if name.endswith('.py'):
+            name = name[:-3]
+        __import__(name)
+        return sys.modules[name]
+    return sys.modules[modname]
 
 
 RYU_DEFAULT_FLAG_FILE = ('ryu.conf', 'etc/ryu/ryu.conf' '/etc/ryu/ryu.conf')

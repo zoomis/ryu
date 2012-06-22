@@ -666,6 +666,7 @@ NXM_OF_IN_PORT = nxm_header(0x0000, 0, 2)
 NXM_OF_ETH_DST = nxm_header(0x0000, 1, 6)
 NXM_OF_ETH_DST_W = nxm_header_w(0x0000, 1, 6)
 NXM_OF_ETH_SRC = nxm_header(0x0000, 2, 6)
+NXM_OF_ETH_SRC_W = nxm_header_w(0x0000, 2, 6)
 NXM_OF_ETH_TYPE = nxm_header(0x0000, 3, 2)
 
 NXM_OF_VLAN_TCI = nxm_header(0x0000, 4, 2)
@@ -706,14 +707,26 @@ NXM_NX_TUN_ID_W = nxm_header_w(0x0001, 16, 8)
 NXM_NX_ARP_SHA = nxm_header(0x0001, 17, 6)
 NXM_NX_ARP_THA = nxm_header(0x0001, 18, 6)
 
+NXM_NX_IPV6_SRC = nxm_header(0x0001, 19, 16)
+NXM_NX_IPV6_SRC_W = nxm_header_w(0x0001, 19, 16)
+NXM_NX_IPV6_DST = nxm_header(0x0001, 20, 16)
+NXM_NX_IPV6_DST_W = nxm_header_w(0x0001, 20, 16)
+
 NXM_NX_ICMPV6_TYPE = nxm_header(0x0001, 21, 1)
 NXM_NX_ICMPV6_CODE = nxm_header(0x0001, 22, 1)
+
+NXM_NX_ND_TARGET = nxm_header(0x0001, 23, 16)
+NXM_NX_ND_TARGET_W = nxm_header_w(0x0001, 23, 16)
 
 NXM_NX_ND_SLL = nxm_header(0x0001, 24, 6)
 
 NXM_NX_ND_TLL = nxm_header(0x0001, 25, 6)
 
+NXM_NX_IPV6_LABEL = nxm_header(0x0001, 27, 4)
+
 NXM_NX_IP_ECN = nxm_header(0x0001, 28, 1)
+
+NXM_NX_IP_TTL = nxm_header(0x0001, 29, 1)
 
 
 def nxm_nx_reg(idx):
