@@ -27,7 +27,7 @@ OFPT_ERROR = 1    # Symmetric message
 OFPT_ECHO_REQUEST = 2    # Symmetric message
 OFPT_ECHO_REPLY = 3    # Symmetric message
 OFPT_EXPERIMENTER = 4    # Symmetric message
-# Immutable message
+
 OFPT_FEATURES_REQUEST = 5    # Controller/switch message
 OFPT_FEATURES_REPLY = 6    # Controller/switch message
 OFPT_GET_CONFIG_REQUEST = 7    # Controller/switch message
@@ -44,23 +44,28 @@ OFPT_GROUP_MOD = 15    # Controller/switch message
 OFPT_PORT_MOD = 16    # Controller/switch message
 OFPT_TABLE_MOD = 17    # Controller/switch message
 
-OFPT_STATS_REQUEST = 18    # Controller/switch message
-OFPT_STATS_REPLY = 19    # Controller/switch message
+OFPT_MULTIPART_REQUEST = 18    # Controller/switch message
+OFPT_MULTIPART_REPLY = 19    # Controller/switch message
 
 OFPT_BARRIER_REQUEST = 20    # Controller/switch message
 OFPT_BARRIER_REPLY = 21    # Controller/switch message
-
 OFPT_QUEUE_GET_CONFIG_REQUEST = 22    # Controller/switch message
 OFPT_QUEUE_GET_CONFIG_REPLY = 23    # Controller/switch message
 
 OFPT_ROLE_REQUEST = 24    # Controller/switch message
 OFPT_ROLE_REPLY = 25    # Controller/switch message
 
+OFPT_GET_ASYNC_REQUEST = 26    # Controller/switch message
+OFPT_GET_ASYNC_REPLY = 27    # Controller/switch message
+OFPT_GET_ASYNC = 28    # Controller/switch message
+
+OFPT_METER_MOD = 29    # Controller/switch message
+
 # struct ofp_port
 OFP_MAX_PORT_NAME_LEN = 16
 OFP_ETH_ALEN = 6
 OFP_ETH_ALEN_STR = str(OFP_ETH_ALEN)
-_OFP_PORT_PACK_STR = 'I4x' + OFP_ETH_ALEN_STR + 's' + '2x' + \
+_OFP_PORT_PACK_STR = 'I4x' + OFP_ETH_ALEN_STR + 'B' + '2x' + \
                      str(OFP_MAX_PORT_NAME_LEN) + 's' + 'IIIIIIII'
 OFP_PORT_PACK_STR = '!' + _OFP_PORT_PACK_STR
 OFP_PORT_SIZE = 64
@@ -121,9 +126,9 @@ OFP_PACKET_QUEUE_SIZE = 16
 assert calcsize(OFP_PACKET_QUEUE_PACK_STR) == OFP_PACKET_QUEUE_SIZE
 
 # enum ofp_queue_properties
-OFPQT_MIN_RATE = 1        # Minimum datarate guaranteed.
-OFPQT_MAX_RATE = 2        # Maximum datarate.
-OFPQT_EXPERIMENTER = 0xffff     # Experimenter defined property.
+OFPQT_MIN_RATE = 1    # Minimum datarate guaranteed.
+OFPQT_MAX_RATE = 2    # Maximum datarate.
+OFPQT_EXPERIMENTER = 0xffff    # Experimenter defined property.
 
 # struct ofp_queue_prop_header
 OFP_QUEUE_PROP_HEADER_PACK_STR = '!HH4x'
@@ -201,16 +206,31 @@ OFPXMT_OFB_IPV6_ND_SLL = 32  # Source link-layer for ND.
 OFPXMT_OFB_IPV6_ND_TLL = 33  # Target link-layer for ND.
 OFPXMT_OFB_MPLS_LABEL = 34  # MPLS label.
 OFPXMT_OFB_MPLS_TC = 35  # MPLS TC.
+OFPXMT_OFP_MPLS_BOS = 36  # MPLS BoS bit.
+OFPXMT_OFB_PBB_ISID = 37  # PBB I-SID.
+OFPXMT_OFB_TUNNEL_ID = 38  # Logical Port Metadata.
+OFPXMT_OFB_IPV6_EXTHDR = 39  # IPv6 Extension Header pseudo-field
 
 # enum ofp_vlan_id
 OFPVID_PRESENT = 0x1000  # bit that indicate that a VLAN id is set.
 OFPVID_NONE = 0x0000  # No VLAN id was set.
 
-# struct ofp_oxm_experimenter_header
+# enum ofp_ipv6exthdr_flags
+OFPIEH_NONEXT = 1 << 0    # "No next header" encountered.
+OFPIEH_ESP = 1 << 1    # Encrypted Sec Payload header present.
+OFPIEH_AUTH = 1 << 2    # Authentication header present.
+OFPIEH_DEST = 1 << 3    # 1 or 2 dest headers present.
+OFPIEH_FRAG = 1 << 4    # Fragment header present.
+OFPIEH_ROUTER = 1 << 5    # Router header present.
+OFPIEH_HOP = 1 << 6    # Hop-by-hop header present.
+OFPIEH_UNREP = 1 << 7    # Unexpected repeats encountered.
+OFPIEH_UNSEQ = 1 << 8    # Unexpected sequencing encountered.
+
+# ofp_oxm_experimenter_header
 OFP_OXM_EXPERIMENTER_HEADER_PACK_STR = '!II'
 OFP_OXM_EXPERIMENTER_HEADER_SIZE = 8
-assert (calcsize(OFP_OXM_EXPERIMENTER_HEADER_PACK_STR) ==
-        OFP_OXM_EXPERIMENTER_HEADER_SIZE)
+assert (calcsize(OFP_OXM_EXPERIMENTER_HEADER_PACK_STR) +
+        OFP_OXM_EXPERIMENTER_HEADER_SIZE) == OFP_OXM_EXPERIMENTER_HEADER_SIZE
 
 # enum ofp_instruction_type
 OFPID_GOTO_TABLE = 1  # Setup the next table in the lookup pipeline.
@@ -221,6 +241,7 @@ OFPIT_WRITE_ACTIONS = 3  # Write the action(s) onto the datapath
 OFPIT_APPLY_ACTIONS = 4  # Applies the action(s) immediately
 OFPIT_CLEAR_ACTIONS = 5  # Clears all actions from the datapath action
                          # set
+OFPIT_METER = 6  # Apply meter (rate limiter)
 OFPIT_EXPERIMENTER = 0xFFFF   # Experimenter instruction
 
 # struct ofp_instruction_goto_table
@@ -235,11 +256,16 @@ OFP_INSTRUCTION_WRITE_METADATA_SIZE = 24
 assert (calcsize(OFP_INSTRUCTION_WRITE_METADATA_PACK_STR) ==
         OFP_INSTRUCTION_WRITE_METADATA_SIZE)
 
-# struct ofp_instaruction_actions
+# struct ofp_instruction_actions
 OFP_INSTRUCTION_ACTIONS_PACK_STR = '!HH4x'
 OFP_INSTRUCTION_ACTIONS_SIZE = 8
 assert (calcsize(OFP_INSTRUCTION_ACTIONS_PACK_STR) ==
         OFP_INSTRUCTION_ACTIONS_SIZE)
+
+# struct ofp_instruction_meter
+OFP_INSTRUCTION_METER_PACK_STR = '!HHI'
+OFP_INSTRUCTION_METER_SIZE = 8
+assert calcsize(OFP_INSTRUCTION_METER_PACK_STR) == OFP_INSTRUCTION_METER_SIZE
 
 # enum ofp_action_type
 OFPAT_OUTPUT = 0    # Output to switch port.
@@ -258,6 +284,8 @@ OFPAT_GROUP = 22  # Apply group
 OFPAT_SET_NW_TTL = 23  # IP TTL.
 OFPAT_DEC_NW_TTL = 24  # Decrement IP TTL.
 OFPAT_SET_FIELD = 25  # Set a header field using OXM TLV format.
+OFPAT_PUSH_PBB = 26  # Push a new PBB service tag (I-TAG)
+OFPAT_POP_PBB = 27  # Pop the outer PBB service tag (I-TAG)
 OFPAT_EXPERIMENTER = 0xffff
 
 # struct ofp_action_header
@@ -287,7 +315,7 @@ OFP_ACTION_SET_QUEUE_PACK_STR = '!HHI'
 OFP_ACTION_SET_QUEUE_SIZE = 8
 assert calcsize(OFP_ACTION_SET_QUEUE_PACK_STR) == OFP_ACTION_SET_QUEUE_SIZE
 
-# struct ofp_aciton_mpls_ttl
+# struct ofp_action_mpls_ttl
 OFP_ACTION_MPLS_TTL_PACK_STR = '!HHB3x'
 OFP_ACTION_MPLS_TTL_SIZE = 8
 assert calcsize(OFP_ACTION_MPLS_TTL_PACK_STR) == OFP_ACTION_MPLS_TTL_SIZE
@@ -308,7 +336,7 @@ OFP_ACTION_POP_MPLS_SIZE = 8
 assert calcsize(OFP_ACTION_POP_MPLS_PACK_STR) == OFP_ACTION_POP_MPLS_SIZE
 
 # struct ofp_action_set_field
-OFP_ACTION_SET_FIELD_PACK_STR = '!HH4B'
+OFP_ACTION_SET_FIELD_PACK_STR = '!HH4x'
 OFP_ACTION_SET_FIELD_SIZE = 8
 assert calcsize(OFP_ACTION_SET_FIELD_PACK_STR) == OFP_ACTION_SET_FIELD_SIZE
 
@@ -318,8 +346,8 @@ OFP_ACTION_EXPERIMENTER_HEADER_SIZE = 8
 assert (calcsize(OFP_ACTION_EXPERIMENTER_HEADER_PACK_STR) ==
         OFP_ACTION_EXPERIMENTER_HEADER_SIZE)
 
-# struct ofp_switch_feature
-OFP_SWITCH_FEATURES_PACK_STR = '!QIB3xII'
+# ofp_switch_features
+OFP_SWITCH_FEATURES_PACK_STR = '!QIBB2xII'
 OFP_SWITCH_FEATURES_SIZE = 32
 assert (calcsize(OFP_SWITCH_FEATURES_PACK_STR) + OFP_HEADER_SIZE ==
         OFP_SWITCH_FEATURES_SIZE)
@@ -344,8 +372,6 @@ OFPC_FRAG_NORMAL = 0    # No special handling for fragments.
 OFPC_FRAG_DROP = 1      # Drop fragments.
 OFPC_FRAG_REASM = 2     # Reassemble (only if OFPC_IP_REASM set).
 OFPC_FRAG_MASK = 3
-OFPC_INVALID_TTL_TO_CONTROLLER = 1 << 2  # Send packets with invalid
-                                         # TTL to the controller.
 
 # enum ofp_table
 OFPTT_MAX = 0xfe
@@ -354,21 +380,15 @@ OFPTT_ALL = 0xff
 # struct ofp_table_mod
 OFP_TABLE_MOD_PACK_STR = '!B3xI'
 OFP_TABLE_MOD_SIZE = 16
-assert (calcsize(OFP_TABLE_MOD_PACK_STR) + OFP_HEADER_SIZE ==
+assert (calcsize(OFP_TABLE_MOD_PACK_STR + OFP_HEADER_SIZE) ==
         OFP_TABLE_MOD_SIZE)
 
-# enum ofp_table_config
-OFPTC_TABLE_MISS_CONTROLLER = 0
-OFPTC_TABLE_MISS_CONTINUE = 1 << 0
-OFPTC_TABLE_MISS_DROP = 1 << 1
-OFPTC_TABLE_MISS_MASK = 3
-
-# struct ofp_flow_mod
 _OFP_FLOW_MOD_PACK_STR0 = 'QQBBHHHIIIH2x'
 OFP_FLOW_MOD_PACK_STR = '!' + _OFP_FLOW_MOD_PACK_STR0 + _OFP_MATCH_PACK_STR
 OFP_FLOW_MOD_PACK_STR0 = '!' + _OFP_FLOW_MOD_PACK_STR0
 OFP_FLOW_MOD_SIZE = 56
-assert (calcsize(OFP_FLOW_MOD_PACK_STR) + OFP_HEADER_SIZE == OFP_FLOW_MOD_SIZE)
+assert (calcsize(OFP_FLOW_MOD_PACK_STR) + OFP_HEADER_SIZE ==
+        OFP_FLOW_MOD_SIZE)
 
 # enum ofp_flow_mod_command
 OFPFC_ADD = 0    # New flow.
@@ -382,6 +402,8 @@ OFPFF_SEND_FLOW_REM = 1 << 0    # Send flow removed message when flow
                                 # expires or is deleted.
 OFPFF_CHECK_OVERLAP = 1 << 1    # Check for overlapping entries first.
 OFPFF_RESET_COUNT = 1 << 2    # Reset flow packet and byte counts.
+OFPFF_NO_PKT_COUNTS = 1 << 3    # Don't keep track of packet count.
+OFPFF_NO_BYT_COUNTS = 1 << 4    # Don't keep track of byte count.
 
 # struct ofp_group_mod
 OFP_GROUP_MOD_PACK_STR = '!HBBI'
@@ -389,15 +411,10 @@ OFP_GROUP_MOD_SIZE = 16
 assert (calcsize(OFP_GROUP_MOD_PACK_STR) + OFP_HEADER_SIZE ==
         OFP_GROUP_MOD_SIZE)
 
-# enum ofp_group
-OFPG_MAX = 0xffffff00
-OFPG_ALL = 0xfffffffc
-OFPG_ANY = 0xffffffff
-
 # enum ofp_group_mod_command
 OFPGC_ADD = 0  # New group.
 OFPGC_MODIFY = 1  # Modify all matching groups.
-OFPGC_DELETE = 2  # Deletes all matching groups.
+OFPGC_DELETE = 2  # Delete all matching groups.
 
 # enum ofp_group_type
 OFPGT_ALL = 0  # All (multicast/broadcast) group.
@@ -406,64 +423,157 @@ OFPGT_INDIRECT = 2  # Indirect group.
 OFPGT_FF = 3  # Fast failover group.
 
 # struct ofp_bucket
-OFP_PORT_MOD_PACK_STR = '!I4x' + OFP_ETH_ALEN_STR + 's' + '2xIII4x'
+OFP_BUCKET_PACK_STR = '!HHII4x'
+OFP_BUCKET_SIZE = 16
+assert calcsize(OFP_BUCKET_PACK_STR) == OFP_BUCKET_SIZE
+
+# struct ofp_port_mod
+OFP_PORT_MOD_PACK_STR = '!I4x' + OFP_ETH_ALEN_STR + 'B2xIII4x'
 OFP_PORT_MOD_SIZE = 40
-assert calcsize(OFP_PORT_MOD_PACK_STR) + OFP_HEADER_SIZE == OFP_PORT_MOD_SIZE
+assert (calcsize(OFP_PORT_MOD_PACK_STR) + OFP_HEADER_SIZE ==
+        OFP_PORT_MOD_SIZE)
 
-# sturct ofp_stats_request
-OFP_STATS_REQUEST_PACK_STR = '!HH4x'
-OFP_STATS_REQUEST_SIZE = 16
-assert (calcsize(OFP_STATS_REQUEST_PACK_STR) + OFP_HEADER_SIZE ==
-        OFP_STATS_REQUEST_SIZE)
+# struct ofp_meter_mod
+OFP_METER_MOD_PACK_STR = '!HHI'
+OFP_METER_MOD_SIZE = 16
+assert (calcsize(OFP_METER_MOD_PACK_STR) + OFP_HEADER_SIZE ==
+        OFP_METER_MOD_SIZE)
 
-# struct ofp_stats_reply
-OFP_STATS_REPLY_PACK_STR = '!HH4x'
-OFP_STATS_REPLY_SIZE = 16
-assert (calcsize(OFP_STATS_REPLY_PACK_STR) + OFP_HEADER_SIZE ==
-        OFP_STATS_REPLY_SIZE)
+# enum ofp_meter
+OFPM_MAX = 0xffff0000
+OFPM_SLOWPATH = 0xfffffffd  # Meter for slow datapath, if any.
+OFPM_CONTROLLER = 0xfffffffe  # Meter for controller connection.
+OFPM_ALL = 0xffffffff  # Represents all meters for stat requests commands.
 
-# enum ofp_stats_types
-OFPST_DESC = 0
-OFPST_FLOW = 1
-OFPST_AGGREGATE = 2
-OFPST_TABLE = 3
-OFPST_PORT = 4
-OFPST_QUEUE = 5
-OFPST_GROUP = 6
-OFPST_GROUP_DESC = 7
-OFPST_GROUP_FEATURES = 8
-OFPST_EXPERIMENTER = 0xffff
+# enum ofp_meter_mod_command
+OFPMC_ADD = 0  # New meter.
+OFPMC_MODIFY = 1  # Modify specified meter.
+OFPMC_DELETE = 2  # Delete specified meter.
 
-# struct ofp_desc_stats
+# enum ofp_meter_flags
+OFPMF_KBPS = 1 << 0  # Rate value in kb/s (kilo-bit per second).
+OFPMF_PKTPS = 1 << 1  # Rate value in packet/sec.
+OFPMF_BURST = 1 << 2  # Do burst size.
+OFPMF_STATS = 1 << 3  # Collect statistics.
+
+# struct ofp_meter_band_header
+OFP_METER_BAND_HEADER_PACK_STR = '!HHII'
+OFP_METER_BAND_HEADER_SIZE = 12
+assert (calcsize(OFP_METER_BAND_HEADER_PACK_STR) ==
+        OFP_METER_BAND_HEADER_SIZE)
+
+# enum ofp_meter_band_type
+OFPMBT_DROP = 1  # Drop packet.
+OFPMBT_DSCP_REMARK = 2  # Remark DSCP in the IP header.
+OFPMBT_EXPERIMENTER = 0xFFFF  # Experimenter meter band.
+
+# struct ofp_meter_band_drop
+OFP_METER_BAND_DROP_PACK_STR = '!HHII4x'
+OFP_METER_BAND_DROP_SIZE = 16
+assert (calcsize(OFP_METER_BAND_DROP_PACK_STR) ==
+        OFP_METER_BAND_DROP_SIZE)
+
+# struct ofp_meter_band_dscp_remark
+OFP_METER_BAND_DSCP_REMARK_PACK_STR = '!HHIIH3x'
+OFP_METER_BAND_DSCP_REMARK_SIZE = 16
+assert (calcsize(OFP_METER_BAND_DSCP_REMARK_PACK_STR) ==
+        OFP_METER_BAND_DSCP_REMARK_SIZE)
+
+# struct ofp_meter_band_experimenter
+OFP_METER_BAND_EXPERIMENTER_PACK_STR = '!HHIII'
+OFP_METER_BAND_EXPERIMENTER_SIZE = 16
+assert (calcsize(OFP_METER_BAND_EXPERIMENTER_PACK_STR) ==
+        OFP_METER_BAND_EXPERIMENTER_SIZE)
+
+# struct ofp_multipart_request
+OFP_MULTIPART_REQUEST_PACK_STR = '!HH4x'
+OFP_MULTIPART_REQUEST_SIZE = 16
+assert (calcsize(OFP_MULTIPART_REQUEST_PACK_STR) + OFP_HEADER_SIZE ==
+        OFP_MULTIPART_REQUEST_SIZE)
+
+# enum ofp_multipart_request_flags
+OFPMPF_REQ_MORE = 1 << 0  # More requests to follow.
+
+# struct ofp_multipart_reply
+OFP_MULTIPART_REPLY_PACK_STR = '!HH4x'
+OFP_MULTIPART_REPLY_SIZE = 16
+assert (calcsize(OFP_MULTIPART_REPLY_PACK_STR) + OFP_HEADER_SIZE ==
+        OFP_MULTIPART_REPLY_SIZE)
+
+# enum ofp_multipart_reply_flags
+OFPMPF_REPLY_MORE = 1 << 0  # More replies to follow.
+
+# enum ofp_multipart_types
+OFPMP_DESC = 0
+OFPMP_FLOW = 1
+OFPMP_AGGREGATE = 2
+OFPMP_TABLE = 3
+OFPMP_PORT_STATS = 4
+OFPMP_QUEUE = 5
+OFPMP_GROUP = 6
+OFPMP_GROUP_DESC = 7
+OFPMP_GROUP_FEATURES = 8
+OFPMP_METER = 9
+OFPMP_METER_CONFIG = 10
+OFPMP_METER_FEATURES = 11
+OFPMP_TABLE_FEATURES = 12
+OFPMP_PORT_DESC = 13
+OFPMP_EXPERIMENTER = 0xffff
+
+# struct ofp_desc
 DESC_STR_LEN = 256
 DESC_STR_LEN_STR = str(DESC_STR_LEN)
 SERIAL_NUM_LEN = 32
 SERIAL_NUM_LEN_STR = str(SERIAL_NUM_LEN)
-OFP_DESC_STATS_PACK_STR = '!' + \
-                          DESC_STR_LEN_STR + 's' + \
-                          DESC_STR_LEN_STR + 's' + \
-                          DESC_STR_LEN_STR + 's' + \
-                          SERIAL_NUM_LEN_STR + 's' + \
-                          DESC_STR_LEN_STR + 's'
-OFP_DESC_STATS_SIZE = 1056
-assert calcsize(OFP_DESC_STATS_PACK_STR) == OFP_DESC_STATS_SIZE
+OFP_DESC_PACK_STR = '!' + \
+                    DESC_STR_LEN + 'c' + \
+                    DESC_STR_LEN + 'c' + \
+                    DESC_STR_LEN + 'c' + \
+                    SERIAL_NUM_LEN + 'c' + \
+                    DESC_STR_LEN + 'c'
+OFP_DESC_SIZE = 1056
+assert calcsize(OFP_DESC_PACK_STR) == OFP_DESC_SIZE
+
 
 # struct ofp_flow_stats_request
-OFP_FLOW_STATS_REQUEST_PACK_STR = '!B3xII4xQQ'
+_OFP_FLOW_STATS_REQUEST_0_PACK_STR = 'B3xII4xQQ'
+OFP_FLOW_STATS_REQUEST_0_PACK_STR = '!' + _OFP_FLOW_STATS_REQUEST_0_PACK_STR
+OFP_FLOW_STATS_REQUEST_0_SIZE = 32
+assert (calcsize(OFP_FLOW_STATS_REQUEST_0_PACK_STR) ==
+        OFP_FLOW_STATS_REQUEST_0_SIZE)
+OFP_FLOW_STATS_REQUEST_PACK_STR = (OFP_FLOW_STATS_REQUEST_0_PACK_STR +
+                                   _OFP_MATCH_PACK_STR)
 OFP_FLOW_STATS_REQUEST_SIZE = 40
-assert (calcsize(OFP_FLOW_STATS_REQUEST_PACK_STR) + OFP_MATCH_SIZE ==
+assert (calcsize(OFP_FLOW_STATS_REQUEST_PACK_STR) ==
         OFP_FLOW_STATS_REQUEST_SIZE)
 
 # struct ofp_flow_stats
-OFP_FLOW_STATS_PACK_STR = '!HBxIIHHH6xQQQ'
+_OFP_FLOW_STATS_0_PACK_STR = 'HBxIIHHHH4xQQQ'
+OFP_FLOW_STATS_0_PACK_STR = '!' + _OFP_FLOW_STATS_0_PACK_STR
+OFP_FLOW_STATS_0_SIZE = 48
+assert calcsize(OFP_FLOW_STATS_0_PACK_STR) == OFP_FLOW_STATS_0_SIZE
+OFP_FLOW_STATS_PACK_STR = (OFP_FLOW_STATS_0_PACK_STR +
+                           _OFP_MATCH_PACK_STR)
 OFP_FLOW_STATS_SIZE = 56
-assert (calcsize(OFP_FLOW_STATS_PACK_STR) + OFP_MATCH_SIZE ==
-        OFP_FLOW_STATS_SIZE)
+assert calcsize(OFP_FLOW_STATS_PACK_STR) == OFP_FLOW_STATS_SIZE
+
+# struct ofp_flow_stats_request
+_OFP_AGGREGATE_STATS_REQUEST_0_PACK_STR = 'B3xII4xQQ'
+OFP_AGGREGATE_STATS_REQUEST_0_PACK_STR = '!' + \
+    _OFP_AGGREGATE_STATS_REQUEST_0_PACK_STR
+OFP_AGGREGATE_STATS_REQUEST_0_SIZE = 32
+assert (calcsize(OFP_AGGREGATE_STATS_REQUEST_0_PACK_STR) ==
+        OFP_AGGREGATE_STATS_REQUEST_0_SIZE)
+OFP_AGGREGATE_STATS_REQUEST_PACK_STR = \
+    OFP_AGGREGATE_STATS_REQUEST_0_PACK_STR + _OFP_MATCH_PACK_STR
+OFP_AGGREGATE_STATS_REQUEST_SIZE = 40
+assert (calcsize(OFP_AGGREGATE_STATS_REQUEST_PACK_STR) ==
+        OFP_AGGREGATE_STATS_REQUEST_SIZE)
 
 # struct ofp_aggregate_stats_request
-OFP_AGGREGATE_STATS_REQUEST_PACK_STR = '!B3xII4xQQ'
+OFP_AGGREGATE_STATS_REQUEST_PACK_STR = '!B3xII4xQQ' + _OFP_MATCH_PACK_STR
 OFP_AGGREGATE_STATS_REQUEST_SIZE = 40
-assert (calcsize(OFP_AGGREGATE_STATS_REQUEST_PACK_STR) + OFP_MATCH_SIZE ==
+assert (calcsize(OFP_AGGREGATE_STATS_REQUEST_PACK_STR) ==
         OFP_AGGREGATE_STATS_REQUEST_SIZE)
 
 # struct ofp_aggregate_stats_reply
@@ -472,22 +582,71 @@ OFP_AGGREGATE_STATS_REPLY_SIZE = 24
 assert (calcsize(OFP_AGGREGATE_STATS_REPLY_PACK_STR) ==
         OFP_AGGREGATE_STATS_REPLY_SIZE)
 
-# sturct ofp_table_stats
-OFP_TABLE_STATS_SIZE = 128
-OFP_MAX_TABLE_NAME_LEN = 32
-OFP_MAX_TABLE_NAME_LEN_STR = str(OFP_MAX_TABLE_NAME_LEN)
-OFP_TABLE_STATS_PACK_STR = '!B7x' + OFP_MAX_TABLE_NAME_LEN_STR + \
-                           'sQQIIQQQQIIIIQQ'
+# struct ofp_table_stats
+OFP_TABLE_STATS_PACK_STR = '!B3xIQQ'
+OFP_TABLE_STATS_SIZE = 24
 assert calcsize(OFP_TABLE_STATS_PACK_STR) == OFP_TABLE_STATS_SIZE
 
-# struct ofp_port_stats_request
+# struct ofp_table_features
+OFP_MAX_TABLE_NAME_LEN = 32
+OFP_MAX_TABLE_NAME_LEN_STR = str(OFP_MAX_TABLE_NAME_LEN)
+OFP_TABLE_FEATURES_PACK_STR = '!HB5x' + OFP_MAX_TABLE_NAME_LEN_STR + \
+                              'c' + 'QQII'
+OFP_TABLE_FEATURES_SIZE = 64
+assert (calcsize(OFP_TABLE_FEATURES_PACK_STR) ==
+        OFP_TABLE_FEATURES_SIZE)
+
+# enum ofp_table_feature_prop_type
+OFPTFPT_INSTRUCTIONS = 0
+OFPTFPT_INSTRUCTIONS_MISS = 1
+OFPTFPT_NEXT_TABLES = 2
+OFPTFPT_NEXT_TABLES_MISS = 3
+OFPTFPT_WRITE_ACTIONS = 4
+OFPTFPT_WRITE_ACTIONS_MISS = 5
+OFPTFPT_APPLY_ACTIONS = 6
+OFPTFPT_APPLY_ACTIONS_MISS = 7
+OFPTFPT_MATCH = 8
+OFPTFPT_WILDCARDS = 10
+OFPTFPT_WRITE_SETFIELD = 12
+OFPTFPT_WRITE_SETFIELD_MISS = 13
+OFPTFPT_APPLY_SETFIELD = 14
+OFPTFPT_APPLY_SETFIELD_MISS = 15
+OFPTFPT_EXPERIMENTER = 0xFFFE
+OFPTFPT_EXPERIMENTER_MISS = 0xFFFF
+
+# struct ofp_table_feature_prop_instructions
+OFP_TABLE_FEATURE_PROP_INSTRUCTIONS_PACK_STR = '!HH'
+OFP_TABLE_FEATURE_PROP_INSTRUCTIONS_SIZE = 4
+assert (calcsize(OFP_TABLE_FEATURE_PROP_INSTRUCTIONS_PACK_STR) ==
+        OFP_TABLE_FEATURE_PROP_INSTRUCTIONS_SIZE)
+
+# struct ofp_table_feature_prop_next_tables
+OFP_TABLE_FEATURE_PROP_NEXT_TABLES_PACK_STR = '!HH'
+OFP_TABLE_FEATURE_PROP_NEXT_TABLES_SIZE = 4
+assert (calcsize(OFP_TABLE_FEATURE_PROP_NEXT_TABLES_PACK_STR) ==
+        OFP_TABLE_FEATURE_PROP_NEXT_TABLES_SIZE)
+
+# struct ofp_table_feature_prop_actions
+OFP_TABLE_FEATURE_PROP_ACTIONS_PACK_STR = '!HH'
+OFP_TABLE_FEATURE_PROP_ACTIONS_SIZE = 4
+assert (calcsize(OFP_TABLE_FEATURE_PROP_ACTIONS_PACK_STR) ==
+        OFP_TABLE_FEATURE_PROP_ACTIONS_SIZE)
+
+# struct ofp_table_feature_prop_oxm
+OFP_TABLE_FEATURE_PROP_OXM_PACK_STR = '!HH'
+OFP_TABLE_FEATURE_PROP_OXM_SIZE = 4
+assert (calcsize(OFP_TABLE_FEATURE_PROP_OXM_PACK_STR) ==
+        OFP_TABLE_FEATURE_PROP_OXM_SIZE)
+
+# struct ofp_port_stats_reuqest
 OFP_PORT_STATS_REQUEST_PACK_STR = '!I4x'
 OFP_PORT_STATS_REQUEST_SIZE = 8
-assert calcsize(OFP_PORT_STATS_REQUEST_PACK_STR) == OFP_PORT_STATS_REQUEST_SIZE
+assert (calcsize(OFP_PORT_STATS_REQUEST_PACK_STR) ==
+        OFP_PORT_STATS_REQUEST_SIZE)
 
 # struct ofp_port_stats
-OFP_PORT_STATS_PACK_STR = '!H6xQQQQQQQQQQQQ'
-OFP_PORT_STATS_SIZE = 104
+OFP_PORT_STATS_PACK_STR = '!I4xQQQQQQQQQQQQII'
+OFP_PORT_STATS_SIZE = 112
 assert calcsize(OFP_PORT_STATS_PACK_STR) == OFP_PORT_STATS_SIZE
 
 # struct ofp_queue_stats_request
@@ -497,8 +656,8 @@ assert (calcsize(OFP_QUEUE_STATS_REQUEST_PACK_STR) ==
         OFP_QUEUE_STATS_REQUEST_SIZE)
 
 # struct ofp_queue_stats
-OFP_QUEUE_STATS_PACK_STR = '!IIQQQ'
-OFP_QUEUE_STATS_SIZE = 32
+OFP_QUEUE_STATS_PACK_STR = '!IIQQQII'
+OFP_QUEUE_STATS_SIZE = 40
 assert calcsize(OFP_QUEUE_STATS_PACK_STR) == OFP_QUEUE_STATS_SIZE
 
 # struct ofp_group_stats_request
@@ -508,8 +667,8 @@ assert (calcsize(OFP_GROUP_STATS_REQUEST_PACK_STR) ==
         OFP_GROUP_STATS_REQUEST_SIZE)
 
 # struct ofp_group_stats
-OFP_GROUP_STATS_PACK_STR = '!H2xII4xQQ'
-OFP_GROUP_STATS_SIZE = 32
+OFP_GROUP_STATS_PACK_STR = '!H2xII4xQQII'
+OFP_GROUP_STATS_SIZE = 40
 assert calcsize(OFP_GROUP_STATS_PACK_STR) == OFP_GROUP_STATS_SIZE
 
 # struct ofp_bucket_counter
@@ -522,35 +681,62 @@ OFP_GROUP_DESC_STATS_PACK_STR = '!HBBI'
 OFP_GROUP_DESC_STATS_SIZE = 8
 assert calcsize(OFP_GROUP_DESC_STATS_PACK_STR) == OFP_GROUP_DESC_STATS_SIZE
 
-# struct ofp_group_features_stats
-OFP_GROUP_FEATURES_STATS_PACK_STR = '!II4I4I'
-OFP_GROUP_FEATURES_STATS_SIZE = 40
-assert (calcsize(OFP_GROUP_FEATURES_STATS_PACK_STR) ==
-        OFP_GROUP_FEATURES_STATS_SIZE)
+# struct ofp_group_features
+OFP_GROUP_FEATURES_PACK_STR = '!II4I4I'
+OFP_GROUP_FEATURES_SIZE = 40
+assert calcsize(OFP_GROUP_FEATURES_PACK_STR) == OFP_GROUP_FEATURES_SIZE
 
-# enmu ofp_group_capabilities
+# enum ofp_group_capabilities
 OFPGFC_SELECT_WEIGHT = 1 << 0  # Support weight for select groups.
 OFPGFC_SELECT_LIVENESS = 1 << 1  # Support liveness for select groups.
 OFPGFC_CHAINING = 1 << 2  # Support chaining groups.
 OFPGFC_CHAINING_CHECKS = 1 << 3  # Check chaining for loops and delete
 
-# struct ofp_experimenter_stats_header
-OFP_EXPERIMENTER_STATS_HEADER_PACK_STR = '!II'
-OFP_EXPERIMENTER_STATS_HEADER_SIZE = 8
-assert (calcsize(OFP_EXPERIMENTER_STATS_HEADER_PACK_STR) ==
-        OFP_EXPERIMENTER_STATS_HEADER_SIZE)
+# struct ofp_meter_multipart_request
+OFP_METER_MULTIPART_REQUEST_PACK_STR = '!I4B'
+OFP_METER_MULTIPART_REQUEST_SIZE = 8
+assert (calcsize(OFP_METER_MULTIPART_REQUEST_PACK_STR) ==
+        OFP_METER_MULTIPART_REQUEST_SIZE)
 
-# struct opf_queue_get_config_request
+# struct ofp_meter_stats
+OFP_METER_STATS_PACK_STR = '!IH6xIQQII'
+OFP_METER_STATS_SIZE = 40
+assert calcsize(OFP_METER_STATS_PACK_STR) == OFP_METER_STATS_SIZE
+
+# struct ofp_meter_band_stats
+OFP_METER_BAND_STATS_PACK_STR = '!QQ'
+OFP_METER_BAND_STATS_SIZE = 16
+assert (calcsize(OFP_METER_BAND_STATS_PACK_STR) ==
+        OFP_METER_BAND_STATS_SIZE)
+
+# struct ofp_meter_config
+OFP_METER_CONFIG_PACK_STR = '!HHI'
+OFP_METER_CONFIG_SIZE = 8
+assert calcsize(OFP_METER_CONFIG_PACK_STR) == OFP_METER_CONFIG_SIZE
+
+# struct ofp_meter_features
+OFP_METER_FEATURES_PACK_STR = '!IIIBB2x'
+OFP_METER_FEATURES_SIZE = 16
+assert (calcsize(OFP_METER_FEATURES_PACK_STR) ==
+        OFP_METER_FEATURES_SIZE)
+
+# struct ofp_experimenter_multipart_header
+OFP_EXPERIMENTER_MULTIPART_HEADER_PACK_STR = '!II'
+OFP_EXPERIMENTER_MULTIPART_HEADER_SIZE = 8
+assert (calcsize(OFP_EXPERIMENTER_MULTIPART_HEADER_PACK_STR) ==
+        OFP_EXPERIMENTER_MULTIPART_HEADER_SIZE)
+
+# struct ofp_queue_get_config_request
 OFP_QUEUE_GET_CONFIG_REQUEST_PACK_STR = '!I4x'
 OFP_QUEUE_GET_CONFIG_REQUEST_SIZE = 16
-assert (calcsize(OFP_QUEUE_GET_CONFIG_REQUEST_PACK_STR) + OFP_HEADER_SIZE ==
-        OFP_QUEUE_GET_CONFIG_REQUEST_SIZE)
+assert (calcsize(OFP_QUEUE_GET_CONFIG_REQUEST_PACK_STR) +
+        OFP_HEADER_SIZE) == OFP_QUEUE_GET_CONFIG_REQUEST_SIZE
 
 # struct ofp_queue_get_config_reply
 OFP_QUEUE_GET_CONFIG_REPLY_PACK_STR = '!I4x'
 OFP_QUEUE_GET_CONFIG_REPLY_SIZE = 16
-assert (calcsize(OFP_QUEUE_GET_CONFIG_REPLY_PACK_STR) + OFP_HEADER_SIZE ==
-        OFP_QUEUE_GET_CONFIG_REPLY_SIZE)
+assert (calcsize(OFP_QUEUE_GET_CONFIG_REPLY_PACK_STR) +
+        OFP_HEADER_SIZE) == OFP_QUEUE_GET_CONFIG_REPLY_SIZE
 
 # struct ofp_packet_out
 OFP_PACKET_OUT_PACK_STR = '!IIH6x'
@@ -570,12 +756,18 @@ OFPCR_ROLE_EQUAL = 1  # Default role, full access.
 OFPCR_ROLE_MASTER = 2  # Full access, at most one master.
 OFPCR_ROLE_SLAVE = 3  # Read-only access.
 
+# struct ofp_async_config
+OFP_ASYNC_CONFIG_PACK_STR = '!2I2I2I'
+OFP_ASYNC_CONFIG_SIZE = 32
+assert (calcsize(OFP_ASYNC_CONFIG_PACK_STR) + OFP_HEADER_SIZE ==
+        OFP_ASYNC_CONFIG_SIZE)
+
 # struct ofp_packet_in
-OFP_PACKET_IN_PACK_STR = '!IHBB'  # the last 2x is for ofp_packet_in::data
-OFP_PACKET_IN_SIZE = 24
+OFP_PACKET_IN_PACK_STR = '!IHBBQ' + _OFP_MATCH_PACK_STR
+OFP_PACKET_IN_SIZE = 32
 OFP_PACKET_IN_DATA_OFFSET = 18
-assert (calcsize(OFP_PACKET_IN_PACK_STR) + OFP_MATCH_SIZE + OFP_HEADER_SIZE ==
-        OFP_PACKET_IN_SIZE)
+assert (calcsize(OFP_PACKET_IN_PACK_STR) + OFP_HEADER_SIZE ==
+       OFP_PACKET_IN_SIZE)
 
 # enum ofp_packet_in_reason
 OFPR_NO_MATCH = 0    # No matching flow.
@@ -612,7 +804,8 @@ OFPPR_MODIFY = 2    # Some attribute of the port has changed.
 # struct ofp_error_msg
 OFP_ERROR_MSG_PACK_STR = '!HH'
 OFP_ERROR_MSG_SIZE = 12
-assert calcsize(OFP_ERROR_MSG_PACK_STR) + OFP_HEADER_SIZE == OFP_ERROR_MSG_SIZE
+assert (calcsize(OFP_ERROR_MSG_PACK_STR) + OFP_HEADER_SIZE ==
+        OFP_ERROR_MSG_SIZE)
 
 # enum ofp_error_type
 OFPET_HELLO_FAILED = 0        # Hello protocol failed.
@@ -627,6 +820,8 @@ OFPET_TABLE_MOD_FAILED = 8    # Table mod request failed.
 OFPET_QUEUE_OP_FAILED = 9    # Queue operation failed.
 OFPET_SWITCH_CONFIG_FAILED = 10    # Switch config request failed.
 OFPET_ROLE_REQUEST_FAILED = 11    # Controller Role request failed.
+OFPET_METER_MOD_FAILED = 12    # Error in meter.
+OFPET_TABLE_FEATURES_FAILED = 13    # Setting table features failed.
 OFPET_EXPERIMENTER = 0xffff    # Experimenter error messages.
 
 # enum ofp_hello_failed_code
@@ -636,10 +831,11 @@ OFPHFC_EPERM = 1        # Permissions error.
 # enum ofp_bad_request_code
 OFPBRC_BAD_VERSION = 0        # ofp_header.version not supported.
 OFPBRC_BAD_TYPE = 1        # ofp_header.type not supported.
-OFPBRC_BAD_STAT = 2        # ofp_stats_msg.type not supported.
+OFPBRC_BAD_MULTIPART = 2        # ofp_stats_msg.type not supported.
 OFPBRC_BAD_EXPERIMENTER = 3    # Experimenter id not supported
-                # (in ofp_experimenter_header
-                            # or ofp_stats_request or ofp_stats_reply).
+                               # (in ofp_experimenter_header
+                               # or ofp_stats_request or
+                               # ofp_stats_reply).
 OFPBRC_BAD_EXP_TYPE = 4        # Experimenter type not supported.
 OFPBRC_EPERM = 5        # Permissions error.
 OFPBRC_BAD_LEN = 6        # Wrong request length for type.
@@ -649,6 +845,8 @@ OFPBRC_BAD_TABLE_ID = 9        # Specified table-id invalid or does not exist.
 OFPBRC_IS_SLAVE = 10        # Denied because controller is slave.
 OFPBRC_BAD_PORT = 11        # Invalid port.
 OFBRC_BAD_PACKET = 12        # Invalid packet in packet-out
+OFPBRC_MULTIPART_BUFFER_OVERFLOW = 13       # ofp_multipart_request
+                                            # overflowed the assigned buffer.
 
 # enum ofp_bad_action_code
 OFPBAC_BAD_TYPE = 0        # Unknown action type.
@@ -662,10 +860,10 @@ OFPBAC_TOO_MANY = 7        # Can't handle this many actions.
 OFPBAC_BAD_QUEUE = 8        # Problem validating output queue.
 OFPBAC_BAD_OUT_GROUP = 9    # Invalid group id in forward action.
 OFPBAC_MATCH_INCONSISTENT = 10    # Action can't apply for this match,
-                # or Set-Field missing prerequisite.
+                                  # or Set-Field missing prerequisite.
 OFPBAC_UNSUPPORTED_ORDER = 11    # Action order is unsupported for
-                # the action list in an Apply-Actions
-                # instruction
+                                 # the action list in an Apply-Actions
+                                 # instruction
 OFPBAC_BAD_TAG = 12        # Actions uses an unsupported tag/encap.
 OFBAC_BAD_SET_TYPE = 13        # Unsupported type in SET_FIELD action.
 OFPBAC_BAD_SET_LEN = 14        # Length problem in SET_FIELD action.
@@ -674,11 +872,11 @@ OFPBAC_BAD_SET_ARGUMENT = 15    # Bad arguement in SET_FIELD action.
 # enum ofp_bad_instruction_code
 OFPBIC_UNKNOWN_INST = 0        # Unknown instruction.
 OFPBIC_UNSUP_INST = 1        # Switch or table does not support
-                # the instruction.
+                             # the instruction.
 OFPBIC_BAD_TABLE_ID = 2        # Invalid Table-Id specified
 OFPBIC_UNSUP_METADATA = 3    # Metadata value unsupported by datapath.
 OFPBIC_UNSUP_METADATA_MASK = 4    # Metadata mask value unsupported by
-                # datapath.
+                                  # datapath.
 OFPBIC_BAD_EXPERIMENTER = 5    # Unknown experimenter id specified.
 OFPBIC_BAD_EXP_TYPE = 6        # Unknown instruction for experimenter id.
 OFPBIC_BAD_EXP_LEN = 7        # Length problem in instrucitons.
@@ -686,7 +884,7 @@ OFPBIC_EPERM = 8        # Permissions error.
 
 # enum ofp_bad_match_code
 OFPBMC_BAD_TYPE = 0        # Unsupported match type apecified by
-                                # the match.
+                           # the match.
 OFPBMC_BAD_LEN = 1        # Length problem in math.
 OFPBMC_BAD_TAG = 2        # Match uses an unsupported tag/encap.
 OFPBMC_BAD_DL_ADDR_MASK = 3    # Unsupported datalink addr mask -
@@ -769,87 +967,46 @@ OFPRRFC_STALE = 0        # Stale Message: old generation_id.
 OFPRRFC_UNSUP = 1        # Controller role change unsupported.
 OFPRRFC_BAD_ROLE = 2        # Invalid role.
 
+# enum ofp_meter_mod_failed_code
+OFPMMFC_UNKNOWN = 0        # Unspecified error.
+OFPMMFC_METER_EXISTS = 1        # Meter not added because a Meter ADD
+                                # attempted to replace an existing Meter.
+OFPMMFC_INVALID_METER = 2        # Meter not added because Meter specified
+                                # is invalid.
+OFPMMFC_UNKNOWN_METER = 3        # Meter not modified because a Meter
+                                 # MODIFY attempted to modify a non-existent
+                                 # Meter.
+OFPMMFC_BAD_COMMAND = 4        # Unsupported or unknown command.
+OFPMMFC_BAD_FLAGS = 5        # Flag configuration unsupported.
+OFPMMFC_BAD_RATE = 6        # Rate unsupported.
+OFPMMFC_BAD_BURST = 7        # Burst size unsupported.
+OFPMMFC_BAD_BAND = 8        # Band unsupported.
+OFPMMFC_BAD_BAND_VALUE = 9        # Band value unsupported.
+OFPMMFC_OUT_OF_METERS = 10        # No more meters availabile.
+OFPMMFC_OUT_OF_BANDS = 11        # The maximum number of properties
+                                 # for a meter has been exceeded.
+
+# enum ofp_table_features_failed_code
+OFPTFFC_BAD_TABLE = 0        # Specified table does not exist.
+OFPTFFC_BAD_METADATA = 1        # Invalid metadata mask.
+OFPTFFC_BAD_TYPE = 2        # Unknown property type.
+OFPTFFC_BAD_LEN = 3        # Length problem in properties.
+OFPTFFC_BAD_ARGUMENT = 4        # Unsupported property value.
+OFPTFFC_EPERM = 5        # Permissions error.
+
 # struct ofp_error_experimenter_msg
 OFP_ERROR_EXPERIMENTER_MSG_PACK_STR = '!HHI'
-OFP_ERROR_EXPERIMENTER_SIZE = 16
-assert (calcsize(OFP_ERROR_EXPERIMENTER_MSG_PACK_STR) + OFP_HEADER_SIZE ==
-        OFP_ERROR_EXPERIMENTER_SIZE)
+OFP_ERROR_EXPERIMENTER_MSG_SIZE = 16
+assert (calcsize(OFP_ERROR_EXPERIMENTER_MSG_PACK_STR) +
+        OFP_HEADER_SIZE) == OFP_ERROR_EXPERIMENTER_MSG_SIZE
 
 # struct ofp_experimenter_header
 OFP_EXPERIMENTER_HEADER_PACK_STR = '!II'
 OFP_EXPERIMENTER_HEADER_SIZE = 16
-assert (calcsize(OFP_EXPERIMENTER_HEADER_PACK_STR) + OFP_HEADER_SIZE ==
-        OFP_EXPERIMENTER_HEADER_SIZE)
-
-
-# OXM
-
-
-def _oxm_tlv_header(class_, field, hasmask, length):
-    return (class_ << 16) | (field << 9) | (hasmask << 8) | length
-
-
-def oxm_tlv_header(field, length):
-    return _oxm_tlv_header(OFPXMC_OPENFLOW_BASIC, field, 0, length)
-
-
-def oxm_tlv_header_w(field, length):
-    return _oxm_tlv_header(OFPXMC_OPENFLOW_BASIC, field, 1, length * 2)
-
-
-OXM_OF_IN_PORT = oxm_tlv_header(OFPXMT_OFB_IN_PORT, 4)
-OXM_OF_IN_PHY_PORT = oxm_tlv_header(OFPXMT_OFB_IN_PHY_PORT, 4)
-OXM_OF_METADATA = oxm_tlv_header(OFPXMT_OFB_METADATA, 8)
-OXM_OF_METADATA_W = oxm_tlv_header_w(OFPXMT_OFB_METADATA, 8)
-OXM_OF_ETH_DST = oxm_tlv_header(OFPXMT_OFB_ETH_DST, 6)
-OXM_OF_ETH_DST_W = oxm_tlv_header_w(OFPXMT_OFB_ETH_DST, 6)
-OXM_OF_ETH_SRC = oxm_tlv_header(OFPXMT_OFB_ETH_SRC, 6)
-OXM_OF_ETH_SRC_W = oxm_tlv_header_w(OFPXMT_OFB_ETH_SRC, 6)
-OXM_OF_ETH_TYPE = oxm_tlv_header(OFPXMT_OFB_ETH_TYPE, 2)
-OXM_OF_VLAN_VID = oxm_tlv_header(OFPXMT_OFB_VLAN_VID, 2)
-OXM_OF_VLAN_VID_W = oxm_tlv_header_w(OFPXMT_OFB_VLAN_VID, 2)
-OXM_OF_VLAN_PCP = oxm_tlv_header(OFPXMT_OFB_VLAN_PCP, 1)
-OXM_OF_IP_DSCP = oxm_tlv_header(OFPXMT_OFB_IP_DSCP, 1)
-OXM_OF_IP_ECN = oxm_tlv_header(OFPXMT_OFB_IP_ECN, 1)
-OXM_OF_IP_PROTO = oxm_tlv_header(OFPXMT_OFB_IP_PROTO, 1)
-OXM_OF_IPV4_SRC = oxm_tlv_header(OFPXMT_OFB_IPV4_SRC, 4)
-OXM_OF_IPV4_SRC_W = oxm_tlv_header_w(OFPXMT_OFB_IPV4_SRC, 4)
-OXM_OF_IPV4_DST = oxm_tlv_header(OFPXMT_OFB_IPV4_DST, 4)
-OXM_OF_IPV4_DST_W = oxm_tlv_header_w(OFPXMT_OFB_IPV4_DST, 4)
-OXM_OF_TCP_SRC = oxm_tlv_header(OFPXMT_OFB_TCP_SRC, 2)
-OXM_OF_TCP_DST = oxm_tlv_header(OFPXMT_OFB_TCP_DST, 2)
-OXM_OF_UDP_SRC = oxm_tlv_header(OFPXMT_OFB_UDP_SRC, 2)
-OXM_OF_UDP_DST = oxm_tlv_header(OFPXMT_OFB_UDP_DST, 2)
-OXM_OF_SCTP_SRC = oxm_tlv_header(OFPXMT_OFB_SCTP_SRC, 2)
-OXM_OF_SCTP_DST = oxm_tlv_header(OFPXMT_OFB_SCTP_DST, 2)
-OXM_OF_ICMPV4_TYPE = oxm_tlv_header(OFPXMT_OFB_ICMPV4_TYPE, 1)
-OXM_OF_ICMPV4_CODE = oxm_tlv_header(OFPXMT_OFB_ICMPV4_CODE, 1)
-OXM_OF_ARP_OP = oxm_tlv_header(OFPXMT_OFB_ARP_OP, 2)
-OXM_OF_ARP_SPA = oxm_tlv_header(OFPXMT_OFB_ARP_SPA, 4)
-OXM_OF_ARP_SPA_W = oxm_tlv_header_w(OFPXMT_OFB_ARP_SPA, 4)
-OXM_OF_ARP_TPA = oxm_tlv_header(OFPXMT_OFB_ARP_TPA, 4)
-OXM_OF_ARP_TPA_W = oxm_tlv_header_w(OFPXMT_OFB_ARP_TPA, 4)
-OXM_OF_ARP_SHA = oxm_tlv_header(OFPXMT_OFB_ARP_SHA, 6)
-OXM_OF_ARP_SHA_W = oxm_tlv_header_w(OFPXMT_OFB_ARP_SHA, 6)
-OXM_OF_ARP_THA = oxm_tlv_header(OFPXMT_OFB_ARP_THA, 6)
-OXM_OF_ARP_THA_W = oxm_tlv_header_w(OFPXMT_OFB_ARP_THA, 6)
-OXM_OF_IPV6_SRC = oxm_tlv_header(OFPXMT_OFB_IPV6_SRC, 16)
-OXM_OF_IPV6_SRC_W = oxm_tlv_header_w(OFPXMT_OFB_IPV6_SRC, 16)
-OXM_OF_IPV6_DST = oxm_tlv_header(OFPXMT_OFB_IPV6_DST, 16)
-OXM_OF_IPV6_DST_W = oxm_tlv_header_w(OFPXMT_OFB_IPV6_DST, 16)
-OXM_OF_IPV6_FLABEL = oxm_tlv_header(OFPXMT_OFB_IPV6_FLABEL, 4)
-OXM_OF_IPV6_FLABEL_W = oxm_tlv_header_w(OFPXMT_OFB_IPV6_FLABEL, 4)
-OXM_OF_ICMPV6_TYPE = oxm_tlv_header(OFPXMT_OFB_ICMPV6_TYPE, 1)
-OXM_OF_ICMPV6_CODE = oxm_tlv_header(OFPXMT_OFB_ICMPV6_CODE, 1)
-OXM_OF_IPV6_ND_TARGET = oxm_tlv_header(OFPXMT_OFB_IPV6_ND_TARGET, 16)
-OXM_OF_IPV6_ND_SLL = oxm_tlv_header(OFPXMT_OFB_IPV6_ND_SLL, 6)
-OXM_OF_IPV6_ND_TLL = oxm_tlv_header(OFPXMT_OFB_IPV6_ND_TLL, 6)
-OXM_OF_MPLS_LABEL = oxm_tlv_header(OFPXMT_OFB_MPLS_LABEL, 4)
-OXM_OF_MPLS_TC = oxm_tlv_header(OFPXMT_OFB_MPLS_TC, 1)
-
+assert (calcsize(OFP_EXPERIMENTER_HEADER_PACK_STR) + OFP_HEADER_SIZE
+        == OFP_EXPERIMENTER_HEADER_SIZE)
 
 # define constants
-OFP_VERSION = 0x03
+OFP_VERSION = 0x04
 OFP_TCP_PORT = 6633
-
 MAX_XID = 0xffffffff
