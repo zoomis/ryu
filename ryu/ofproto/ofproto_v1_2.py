@@ -213,7 +213,7 @@ assert (calcsize(OFP_OXM_EXPERIMENTER_HEADER_PACK_STR) ==
         OFP_OXM_EXPERIMENTER_HEADER_SIZE)
 
 # enum ofp_instruction_type
-OFPID_GOTO_TABLE = 1  # Setup the next table in the lookup pipeline.
+OFPIT_GOTO_TABLE = 1  # Setup the next table in the lookup pipeline.
 OFPIT_WRITE_METADATA = 2  # Setup the metadata field for use later in
                           # pipeline.
 OFPIT_WRITE_ACTIONS = 3  # Write the action(s) onto the datapath
@@ -406,6 +406,11 @@ OFPGT_INDIRECT = 2  # Indirect group.
 OFPGT_FF = 3  # Fast failover group.
 
 # struct ofp_bucket
+OFP_BUCKET_PACK_STR = '!HHII4x'
+OFP_BUCKET_SIZE = 16
+assert calcsize(OFP_BUCKET_PACK_STR) == OFP_BUCKET_SIZE
+
+# struct ofp_port_mod
 OFP_PORT_MOD_PACK_STR = '!I4x' + OFP_ETH_ALEN_STR + 's' + '2xIII4x'
 OFP_PORT_MOD_SIZE = 40
 assert calcsize(OFP_PORT_MOD_PACK_STR) + OFP_HEADER_SIZE == OFP_PORT_MOD_SIZE
