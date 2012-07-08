@@ -310,8 +310,11 @@ class ClsRule(object):
         if not self.wc.wildcards & FWW_IN_PORT:
             wildcards &= ~ofproto.OFPFW_IN_PORT
 
-        if self.flow.dl_src != mac.DONTCARE:
+        if self.flow.dl_src != mac.DONTCARE or self.wc.dl_src_mask:
             wildcards &= ~ofproto.OFPFW_DL_SRC
+
+        if self.flow.dl_dst != mac.DONTCARE or self.wc.dl_dst_mask:
+            wildcards &= ~ofproto.OFPFW_DL_DST
 
         if self.wc.dl_dst_mask:
             wildcards &= ~ofproto.OFPFW_DL_DST
