@@ -49,6 +49,7 @@ class SimpleIsolation(app_manager.RyuApp):
         self.dpset = kwargs['dpset']
         self.mac2port = mac_to_port.MacToPortTable()
         self.mac2net = mac_to_network.MacToNetwork(self.nw)
+        self.nw.mac2net = self.mac2net # Give Network access to mac2net object
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):

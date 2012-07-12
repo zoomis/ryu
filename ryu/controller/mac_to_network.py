@@ -56,3 +56,11 @@ class MacToNetwork(object):
 
     def del_mac(self, mac):
         del self.mac_to_net[mac]
+    
+    def list_macs(self, nw_id):
+        mac_list = []
+        for k, v in self.mac_to_net.items():
+            if (v == nw_id):
+               mac_list.append(k)
+        
+        return mac_list

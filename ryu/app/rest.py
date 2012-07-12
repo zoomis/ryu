@@ -85,6 +85,18 @@ class NetworkController(ControllerBase):
         body = json.dumps(self.nw.list_networks())
         return Response(content_type='application/json', body=body)
 
+    def list_macs(self, req, network_id, **_kwargs):
+        mac_list = []
+        for macAddr in self.nw.list_macs(network_id):
+            macStr = ""
+            for byte in map(ord, macAddr): #Converts byte-wise mac addr to proper string
+                macStr += "%X" % byte + "-"
+            
+            mac_list.append(macStr[:-1])
+            
+        body = json.dumps(mac_list)
+        return Response(content_type='application/json', body=body)
+
     def delete(self, req, network_id, **_kwargs):
         try:
             self.nw.remove_network(network_id)
@@ -164,6 +176,11 @@ class restapi(app_manager.RyuApp):
         mapper.connect('networks', uri,
                        controller=NetworkController, action='delete',
                        conditions=dict(method=['DELETE']))
+
+        # List macs associated with a network
+        mapper.connect('networks', uri + '/macs',
+                       controller=NetworkController, action='list_macs',
+                       conditions=dict(method=['GET']))
 
         wsgi.registory['PortController'] = self.nw
         mapper.connect('networks', uri,

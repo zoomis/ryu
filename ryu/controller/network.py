@@ -16,6 +16,7 @@
 
 import logging
 
+from ryu.controller import mac_to_network
 from ryu.exception import NetworkNotFound, NetworkAlreadyExist
 from ryu.exception import PortAlreadyExist, PortNotFound, PortUnknown
 from ryu.app.rest_nw_id import NW_ID_UNKNOWN
@@ -28,6 +29,7 @@ class Network(object):
         self.nw_id_unknown = nw_id_unknown
         self.networks = {}
         self.dpids = {}
+        self.mac2net = None
 
     def _dpids_setdefault(self, dpid):
         return self.dpids.setdefault(dpid, {})
@@ -63,6 +65,16 @@ class Network(object):
             return list(self.networks[network_id])
         except KeyError:
             raise NetworkNotFound(network_id=network_id)
+
+    # Return list of macs associated with network ID
+    def list_macs(self, network_id):
+        try:
+            # use list() to keep compatibility for output
+            # set() isn't json serializable
+            return list(self.mac2net.list_macs(network_id))
+        except KeyError:
+            raise NetworkNotFound(network_id=network_id)
+
 
     def _update_port(self, network_id, dpid, port, port_may_exist):
         def _known_nw_id(nw_id):
