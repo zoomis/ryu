@@ -70,7 +70,7 @@ class SimpleSwitch(app_manager.RyuApp):
             rule = nx_match.ClsRule()
             rule.set_in_port(msg.in_port)
             rule.set_dl_dst(dst)
-            rule.set_dl_type(nx_match.ETH_TYPE_IP)
+            rule.set_dl_src(src)
             rule.set_nw_dscp(0)
             datapath.send_flow_mod(
                 rule=rule, cookie=0, command=ofproto.OFPFC_ADD,
