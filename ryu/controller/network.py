@@ -28,6 +28,13 @@ class Network(object):
         self.nw_id_unknown = nw_id_unknown
         self.networks = {}
         self.dpids = {}
+        self.packetHandlerID = 0
+    
+    def setPacketHandler(self, handler_id):
+        self.packetHandlerID = handler_id
+    
+    def getPacketHandler(self):
+        return self.packetHandlerID
 
     def _dpids_setdefault(self, dpid):
         return self.dpids.setdefault(dpid, {})

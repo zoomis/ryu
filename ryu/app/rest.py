@@ -93,6 +93,10 @@ class NetworkController(ControllerBase):
 
         return Response(status=200)
 
+    def setPacketHandler(self, req, handler_id, **_kwargs):
+        self.nw.setPacketHandler(int(handler_id))
+        return Response(status=200)
+
 
 class PortController(ControllerBase):
     def __init__(self, req, link, data, **config):
@@ -147,6 +151,10 @@ class restapi(app_manager.RyuApp):
         mapper = wsgi.mapper
 
         wsgi.registory['NetworkController'] = self.nw
+        mapper.connect('networks', '/v1.0/packethandler/{handler_id}',
+                       controller=NetworkController, action='setPacketHandler',
+                       conditions=dict(method=['PUT']))
+        
         uri = '/v1.0/networks'
         mapper.connect('networks', uri,
                        controller=NetworkController, action='lists',
