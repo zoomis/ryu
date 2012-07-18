@@ -63,6 +63,7 @@ from ryu.app.wsgi import ControllerBase, WSGIApplication
 # {3: [(3,4), (4,7)], 5: [(3,6)], 1: [(5,6), (4,5), (4, 10)]}
 #
 
+from ryu.exception import MacAddressDuplicated
 
 class NetworkController(ControllerBase):
     def __init__(self, req, link, data, **config):
@@ -96,6 +97,22 @@ class NetworkController(ControllerBase):
             
         body = json.dumps(mac_list)
         return Response(content_type='application/json', body=body)
+
+    def add_mac(self, req, network_id, mac, **_kwargs):
+        try:
+            self.nw.add_mac(network_id, mac)
+        except MacAddressDuplicated:
+            return Response(status=404) #TO DO: Check if this status code is appropriate
+        else:
+            return Response(status=200)
+
+    def add_iface(self, req, network_id, iface_id, **_kwargs):
+        try:
+            self.nw.add_iface(network_id, iface_id)
+        except MacAddressDuplicated:
+            return Response(status=404) #TO DO: Check if this status code is appropriate
+        else:
+            return Response(status=200)
 
     def delete(self, req, network_id, **_kwargs):
         try:
@@ -181,6 +198,16 @@ class restapi(app_manager.RyuApp):
         mapper.connect('networks', uri + '/macs',
                        controller=NetworkController, action='list_macs',
                        conditions=dict(method=['GET']))
+
+        # Associate an interface with a network (In flat L2 network)
+        mapper.connect('networks', uri + '/macs/{mac}',
+                       controller=NetworkController, action='add_mac',
+                       conditions=dict(method=['PUT']))
+
+        # Associate an interface with a network (In flat L2 network)
+        mapper.connect('networks', uri + '/iface/{iface_id}',
+                       controller=NetworkController, action='add_iface',
+                       conditions=dict(method=['PUT']))
 
         wsgi.registory['PortController'] = self.nw
         mapper.connect('networks', uri,

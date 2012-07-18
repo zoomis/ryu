@@ -19,7 +19,8 @@ import logging
 from ryu.controller import mac_to_network
 from ryu.exception import NetworkNotFound, NetworkAlreadyExist
 from ryu.exception import PortAlreadyExist, PortNotFound, PortUnknown
-from ryu.app.rest_nw_id import NW_ID_UNKNOWN
+from ryu.app.rest_nw_id import NW_ID_UNKNOWN, NW_ID_EXTERNAL
+from ryu.lib.mac import haddr_to_bin
 
 LOG = logging.getLogger('ryu.controller.network')
 
@@ -29,7 +30,7 @@ class Network(object):
         self.nw_id_unknown = nw_id_unknown
         self.networks = {}
         self.dpids = {}
-        self.mac2net = None
+        self.mac2net = None # Relies on application to make this association
 
     def _dpids_setdefault(self, dpid):
         return self.dpids.setdefault(dpid, {})
@@ -179,3 +180,24 @@ class Network(object):
                 ret.append(port_no)
 
         return ret
+
+    def add_mac(self, net_id, mac):
+        assert self.mac2net is not None
+        
+        # Must convert MAC address into ASCII char types
+        charMAC = haddr_to_bin(mac)
+        
+        self.mac2net.add_mac(charMAC, net_id, NW_ID_EXTERNAL)
+
+    def add_iface(self, net_id, iface_id):
+        assert self.mac2net is not None
+        
+        # Use port-id to look up MAC address in table
+        # and convert to ASCII char types
+        mac = None # TO DO!!!
+        charMAC = haddr_to_bin(mac)
+        
+        self.mac2net.add_mac(charMAC, net_id, NW_ID_EXTERNAL)
+    
+    # To do: Create del_mac and del_iface?? Needed?
+        
