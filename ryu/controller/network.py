@@ -30,7 +30,15 @@ class Network(object):
         self.nw_id_unknown = nw_id_unknown
         self.networks = {}
         self.dpids = {}
-        self.mac2net = None # Relies on application to make this association
+        
+        # The following relies on application to make
+        # the necessary assignments
+        self.mac2net = None
+        self.packetHandlerCallback = None
+    
+    def setPacketHandler(self, handler_id):
+        assert self.packetHandlerCallback != None
+        self.packetHandlerCallback(handler_id)
 
     def _dpids_setdefault(self, dpid):
         return self.dpids.setdefault(dpid, {})
@@ -72,6 +80,7 @@ class Network(object):
         try:
             # use list() to keep compatibility for output
             # set() isn't json serializable
+            assert self.mac2net != None
             return list(self.mac2net.list_macs(network_id))
         except KeyError:
             raise NetworkNotFound(network_id=network_id)
@@ -199,5 +208,5 @@ class Network(object):
         
         self.mac2net.add_mac(charMAC, net_id, NW_ID_EXTERNAL)
     
-    # To do: Create del_mac and del_iface?? Needed?
+    # To do: Create del_mac and del_iface
         

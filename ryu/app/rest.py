@@ -22,6 +22,7 @@ from ryu.controller import network
 from ryu.exception import NetworkNotFound, NetworkAlreadyExist
 from ryu.exception import PortNotFound, PortAlreadyExist
 from ryu.app.wsgi import ControllerBase, WSGIApplication
+from ryu.exception import MacAddressDuplicated
 
 ## TODO:XXX
 ## define db interface and store those information into db
@@ -62,8 +63,6 @@ from ryu.app.wsgi import ControllerBase, WSGIApplication
 # {network_id: [(dpid, port), ...
 # {3: [(3,4), (4,7)], 5: [(3,6)], 1: [(5,6), (4,5), (4, 10)]}
 #
-
-from ryu.exception import MacAddressDuplicated
 
 class NetworkController(ControllerBase):
     def __init__(self, req, link, data, **config):
@@ -122,6 +121,10 @@ class NetworkController(ControllerBase):
 
         return Response(status=200)
 
+    def setPacketHandler(self, req, handler_id, **_kwargs):
+        self.nw.setPacketHandler(int(handler_id))
+        return Response(status=200)
+
 
 class PortController(ControllerBase):
     def __init__(self, req, link, data, **config):
@@ -176,6 +179,10 @@ class restapi(app_manager.RyuApp):
         mapper = wsgi.mapper
 
         wsgi.registory['NetworkController'] = self.nw
+        mapper.connect('networks', '/v1.0/packethandler/{handler_id}',
+                       controller=NetworkController, action='setPacketHandler',
+                       conditions=dict(method=['PUT']))
+        
         uri = '/v1.0/networks'
         mapper.connect('networks', uri,
                        controller=NetworkController, action='lists',
