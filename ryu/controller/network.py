@@ -199,14 +199,32 @@ class Network(object):
         self.mac2net.add_mac(charMAC, net_id, NW_ID_EXTERNAL)
 
     def add_iface(self, net_id, iface_id):
+        return # Feature not completed
         assert self.mac2net is not None
         
-        # Use port-id to look up MAC address in table
+        # Use iface-id to look up MAC address in table
         # and convert to ASCII char types
         mac = None # TO DO!!!
         charMAC = haddr_to_bin(mac)
         
         self.mac2net.add_mac(charMAC, net_id, NW_ID_EXTERNAL)
     
-    # To do: Create del_mac and del_iface
+    def del_mac(self, mac):
+        assert self.mac2net is not None
+
+        # Must convert MAC address into ASCII char types
+        charMAC = haddr_to_bin(mac)
+        
+        self.mac2net.del_mac(charMAC)
+
+    def del_iface(self, iface_id):
+        return # Feature not completed
+        assert self.mac2net is not None
+        
+        # Use iface-id to look up MAC address in table
+        # and convert to ASCII char types
+        mac = None # TO DO!!!
+        charMAC = haddr_to_bin(mac)
+        
+        self.mac2net.del_mac(charMAC)
         

@@ -101,7 +101,7 @@ class NetworkController(ControllerBase):
         try:
             self.nw.add_mac(network_id, mac)
         except MacAddressDuplicated:
-            return Response(status=404) #TO DO: Check if this status code is appropriate
+            return Response(status=409)
         else:
             return Response(status=200)
 
@@ -109,7 +109,27 @@ class NetworkController(ControllerBase):
         try:
             self.nw.add_iface(network_id, iface_id)
         except MacAddressDuplicated:
-            return Response(status=404) #TO DO: Check if this status code is appropriate
+            return Response(status=409)
+        else:
+            return Response(status=200)
+
+    def del_mac(self, req, network_id, mac, **_kwargs):
+        try:
+            # 'network_id' not actually required
+            # Kept to keep uri format similar to add_mac
+            self.nw.del_mac(mac)
+        except:
+            return Response(status=500)
+        else:
+            return Response(status=200)
+
+    def del_iface(self, req, network_id, iface_id, **_kwargs):
+        try:
+            # 'network_id' not actually required
+            # Kept to keep uri format similar to add_iface
+            self.nw.del_iface(iface_id)
+        except:
+            return Response(status=500)
         else:
             return Response(status=200)
 
@@ -178,6 +198,7 @@ class restapi(app_manager.RyuApp):
         wsgi = kwargs['wsgi']
         mapper = wsgi.mapper
 
+        # Change packet handler
         wsgi.registory['NetworkController'] = self.nw
         mapper.connect('networks', '/v1.0/packethandler/{handler_id}',
                        controller=NetworkController, action='setPacketHandler',
@@ -206,15 +227,25 @@ class restapi(app_manager.RyuApp):
                        controller=NetworkController, action='list_macs',
                        conditions=dict(method=['GET']))
 
-        # Associate an interface with a network (In flat L2 network)
+        # Associate a MAC address with a network
         mapper.connect('networks', uri + '/macs/{mac}',
                        controller=NetworkController, action='add_mac',
                        conditions=dict(method=['PUT']))
 
-        # Associate an interface with a network (In flat L2 network)
+        # Associate an interface with a network
         mapper.connect('networks', uri + '/iface/{iface_id}',
                        controller=NetworkController, action='add_iface',
                        conditions=dict(method=['PUT']))
+
+        # Dissociate a MAC address with a network
+        mapper.connect('networks', uri + '/macs/{mac}',
+                       controller=NetworkController, action='del_mac',
+                       conditions=dict(method=['DELETE']))
+
+        # Dissociate an interface with a network
+        mapper.connect('networks', uri + '/iface/{iface_id}',
+                       controller=NetworkController, action='del_iface',
+                       conditions=dict(method=['DELETE']))
 
         wsgi.registory['PortController'] = self.nw
         mapper.connect('networks', uri,
