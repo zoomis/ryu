@@ -23,7 +23,7 @@ from ryu.controller.handler import MAIN_DISPATCHER
 from ryu.controller.handler import set_ev_cls
 from ryu.ofproto import nx_match
 from ryu.lib.mac import haddr_to_str
-
+from ryu.lib import mac
 
 LOG = logging.getLogger('ryu.app.simple_switch')
 
@@ -44,6 +44,10 @@ class SimpleSwitch(app_manager.RyuApp):
         super(SimpleSwitch, self).__init__(*args, **kwargs)
         self.mac2port = kwargs['mac2port']
 
+    def _drop_packet(self, msg):
+        datapath = msg.datapath
+        datapath.send_packet_out(msg.buffer_id, msg.in_port, [])
+
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
         msg = ev.msg
@@ -58,30 +62,38 @@ class SimpleSwitch(app_manager.RyuApp):
                  dpid, haddr_to_str(src), haddr_to_str(dst), msg.in_port)
 
         self.mac2port.port_add(dpid, msg.in_port, src)
-        out_port = self.mac2port.port_get(dpid, dst)
-
-        if out_port == None:
-            LOG.info("out_port not found")
+        broadcast = (dst == mac.BROADCAST) or mac.is_multicast(dst)
+    
+        if broadcast:
             out_port = ofproto.OFPP_FLOOD
+            LOG.info("broadcast frame, flood and install flow")
+        else:       
+            if src != dst:
+                out_port = self.mac2port.port_get(dpid, dst)
+                if out_port == None:
+                    LOG.info("out_port not found")
+                    out_port = ofproto.OFPP_FLOOD
+            else:
+                self._drop_packet(msg)
+                return
 
         actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
 
-        if out_port != ofproto.OFPP_FLOOD:
-            rule = nx_match.ClsRule()
-            rule.set_in_port(msg.in_port)
-            rule.set_dl_dst(dst)
-            rule.set_dl_src(src)
-            rule.set_nw_dscp(0)
-            datapath.send_flow_mod(
-                rule=rule, cookie=0, command=ofproto.OFPFC_ADD,
-                idle_timeout=0, hard_timeout=0,
-                priority=ofproto.OFP_DEFAULT_PRIORITY,
-                flags=ofproto.OFPFF_SEND_FLOW_REM, actions=actions)
+        rule = nx_match.ClsRule()
+        rule.set_in_port(msg.in_port)
+        rule.set_dl_dst(dst)
+        rule.set_dl_src(src)
+        rule.set_nw_dscp(0)
+        datapath.send_flow_mod(
+            rule=rule, cookie=0, command=ofproto.OFPFC_ADD,
+            idle_timeout=0, hard_timeout=0,
+            priority=ofproto.OFP_DEFAULT_PRIORITY,
+            flags=ofproto.OFPFF_SEND_FLOW_REM, actions=actions)
 
         datapath.send_packet_out(msg.buffer_id, msg.in_port, actions)
 
     @set_ev_cls(ofp_event.EventOFPPortStatus, MAIN_DISPATCHER)
-    def _port_status_handler(self, ev):
+    def port_status_handler(self, ev):
         msg = ev.msg
         reason = msg.reason
         port_no = msg.desc.port_no
@@ -95,3 +107,7 @@ class SimpleSwitch(app_manager.RyuApp):
             LOG.info("port modified %s", port_no)
         else:
             LOG.info("Illeagal port state %s %s", port_no, reason)
+
+    @set_ev_cls(ofp_event.EventOFPBarrierReply, MAIN_DISPATCHER)
+    def barrier_replay_handler(self, ev):
+        pass
