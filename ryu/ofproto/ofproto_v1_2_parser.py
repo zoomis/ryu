@@ -99,8 +99,8 @@ class OFPEchoRequest(MsgBase):
         return msg
 
     def _serialize_body(self):
-        assert self.data is not None
-        self.buf += self.data
+        if self.data is not None:
+            self.buf += self.data
 
 
 @_register_parser
@@ -132,9 +132,11 @@ class OFPExperimenter(MsgBase):
     def parser(cls, datapath, version, msg_type, msg_len, xid, buf):
         msg = super(OFPExperimenter, cls).parser(datapath, version, msg_type,
                                                  msg_len, xid, buf)
-        (experimenter, exp_type) = struct.unpack_from(
+        (msg.experimenter, msg.exp_type) = struct.unpack_from(
             ofproto_v1_2.OFP_EXPERIMENTER_HEADER_PACK_STR, msg.buf,
             ofproto_v1_2.OFP_HEADER_SIZE)
+
+        return msg
 
 
 class OFPPort(collections.namedtuple('OFPPort', (
@@ -200,7 +202,7 @@ class OFPGetConfigReply(MsgBase):
         msg = super(OFPGetConfigReply, cls).parser(datapath, version, msg_type,
                                                    msg_len, xid, buf)
         msg.flags, msg.miss_send_len = struct.unpack_from(
-            ofproto_v1_2.OFP_SWITCH_CONFIG_PACK_STR, buf,
+            ofproto_v1_2.OFP_SWITCH_CONFIG_PACK_STR, msg.buf,
             ofproto_v1_2.OFP_HEADER_SIZE)
         return msg
 
@@ -240,7 +242,7 @@ class OFPPacketIn(MsgBase):
 
         match_len = utils.round_up(msg.match.length, 8)
         msg.data = msg.buf[(ofproto_v1_2.OFP_PACKET_IN_SIZE -
-                            ofproto_v1_2.OFP_MATCH_SIZE + match_len):]
+                            ofproto_v1_2.OFP_MATCH_SIZE + match_len + 2):]
 
         if msg.total_len < len(msg.data):
             # discard padding for 8-byte alignment of OFP packet
@@ -448,6 +450,7 @@ class OFPInstructionActions(object):
             a = OFPAction.parser(buf, offset)
             actions.append(a)
             actions_len -= a.len
+            offset += a.len
 
         inst = cls(type_, actions)
         inst.len = len_
@@ -696,7 +699,8 @@ class OFPActionPopVlan(OFPAction):
 
     @classmethod
     def parser(cls, buf, offset):
-        msg_pack_into(ofproto_v1_2.OFP_ACTION_HEADER_PACK_STR, buf, offset)
+        (type_, len_) = struct.unpack_from(
+            ofproto_v1_2.OFP_ACTION_HEADER_PACK_STR, buf, offset)
         return cls()
 
 
@@ -734,15 +738,13 @@ class OFPActionSetField(OFPAction):
         return action
 
     def serialize(self, buf, offset):
-        oxm_len = self.field.oxm_len()
-        oxm_pad = utils.round_up(oxm_len + 4, 8) - (oxm_len + 4)
-        self.len = ofproto_v1_2.OFP_ACTION_SET_FIELD_SIZE + oxm_len + oxm_pad
-        pad_len = utils.round_up(self.len, 8) - self.len
-        self.len += pad_len
+        len_ = ofproto_v1_2.OFP_ACTION_SET_FIELD_SIZE + self.field.oxm_len()
+        self.len = utils.round_up(len_, 8)
+        pad_len = self.len - len_
 
         msg_pack_into('!HH', buf, offset, self.type, self.len)
         self.field.serialize(buf, offset + 4)
-        offset += ofproto_v1_2.OFP_ACTION_SET_FIELD_SIZE + oxm_len
+        offset += len_
         ofproto_parser.msg_pack_into("%dx" % pad_len, buf, offset)
 
 
@@ -818,9 +820,9 @@ class OFPGroupMod(MsgBase):
                       ofproto_v1_2.OFP_HEADER_SIZE,
                       self.command, self.type, self.group_id)
 
-        offset = ofproto_v1_2.OFP_HEADER_SIZE + ofproto_v1_2.OFP_GROUP_MOD_SIZE
+        offset = ofproto_v1_2.OFP_GROUP_MOD_SIZE
         for b in self.buckets:
-            b.serialize(self, buf, offset)
+            b.serialize(self.buf, offset)
             offset += b.len
 
 
@@ -992,13 +994,16 @@ class OFPFlowStats(object):
         inst_length = (length - (ofproto_v1_2.OFP_FLOW_STATS_SIZE -
                                  ofproto_v1_2.OFP_MATCH_SIZE + match_length))
         offset += match_length
+        instructions = []
         while inst_length > 0:
             inst = OFPInstruction.parser(buf, offset)
+            instructions.append(inst)
+            offset += inst.len
             inst_length -= inst.len
 
         return cls(length, table_id, duration_sec, duration_nsec, priority,
                    idle_timeout, hard_timeout, cookie, packet_count,
-                   byte_count, match)
+                   byte_count, match, instructions)
 
 
 @_set_msg_type(ofproto_v1_2.OFPT_STATS_REQUEST)
@@ -1087,7 +1092,7 @@ class OFPPortStatsRequest(OFPStatsRequest):
 class OFPPortStats(
     collections.namedtuple('OFPPortStats',
                            ('port_no', 'rx_packets', 'tx_packets',
-                            'rx_byptes', 'tx_bytes',
+                            'rx_bytes', 'tx_bytes',
                             'rx_dropped', 'tx_dropped',
                             'rx_errors', 'tx_errors',
                             'rx_frame_err', 'rx_over_err',
@@ -1235,7 +1240,7 @@ class OFPGroupFeaturesStats(object):
         self.types = types
         self.capabilities = capabilities
         self.max_groups = max_groups
-        self.actions = acitons
+        self.actions = actions
 
     @classmethod
     def parser(cls, buf, offset):
@@ -1244,7 +1249,7 @@ class OFPGroupFeaturesStats(object):
         types = stats[0]
         capabilities = stats[1]
         max_groups = stats[2:6]
-        acitons = stats[6:10]
+        actions = stats[6:10]
 
         return cls(types, capabilities, max_groups, actions)
 
@@ -1306,17 +1311,45 @@ class OFPPacketQueue(object):
 
     @classmethod
     def parser(cls, buf, offset):
-        (msg.queue_id, msg.port, msg.len) = struct.unpack_from(
+        (queue_id, port, len_) = struct.unpack_from(
             ofproto_v1_2.OFP_PACKET_QUEUE_PACK_STR, buf, offset)
         length = ofproto_v1_2.OFP_PACKET_QUEUE_SIZE
         offset += ofproto_v1_2.OFP_PACKET_QUEUE_SIZE
-        msg.properties = []
-        while length < msg.len:
+        properties = []
+        while length < len_:
             queue_prop = OFPQueueProp.parser(buf, offset)
-            msg.properties.append(queue_prop)
+            properties.append(queue_prop)
             offset += queue_prop.len
-            length += queue_prop
-        return msg
+            length += queue_prop.len
+        return cls(queue_id, port, len_, properties)
+
+
+@OFPQueueProp.register_property(ofproto_v1_2.OFPQT_MIN_RATE,
+                                ofproto_v1_2.OFP_QUEUE_PROP_MIN_RATE_SIZE)
+class OFPQueuePropMinRate(OFPQueueProp):
+    def __init__(self, rate):
+        super(OFPQueuePropMinRate, self).__init__()
+        self.rate = rate
+
+    @classmethod
+    def parser(cls, buf, offset):
+        (rate,) = struct.unpack_from(
+            ofproto_v1_2.OFP_QUEUE_PROP_MIN_RATE_PACK_STR, buf, offset)
+        return cls(rate)
+
+
+@OFPQueueProp.register_property(ofproto_v1_2.OFPQT_MAX_RATE,
+                                ofproto_v1_2.OFP_QUEUE_PROP_MAX_RATE_SIZE)
+class OFPQueuePropMaxRate(OFPQueueProp):
+    def __init__(self, rate):
+        super(OFPQueuePropMaxRate, self).__init__()
+        self.rate = rate
+
+    @classmethod
+    def parser(cls, buf, offset):
+        (rate,) = struct.unpack_from(
+            ofproto_v1_2.OFP_QUEUE_PROP_MAX_RATE_PACK_STR, buf, offset)
+        return cls(rate)
 
 
 @_register_parser
@@ -1336,8 +1369,9 @@ class OFPQueueGetConfigReply(MsgBase):
 
         msg.queues = []
         length = ofproto_v1_2.OFP_QUEUE_GET_CONFIG_REPLY_SIZE
-        while length < msg.length:
-            queue = OFPPacketQueue.parser(buf, offset)
+        offset = ofproto_v1_2.OFP_QUEUE_GET_CONFIG_REPLY_SIZE
+        while length < msg.msg_len:
+            queue = OFPPacketQueue.parser(msg.buf, offset)
             msg.queues.append(queue)
 
             offset += queue.len
@@ -1399,6 +1433,7 @@ class Flow(object):
     def __init__(self):
         self.in_port = 0
         self.in_phy_port = 0
+        self.metadata = 0
         self.dl_dst = mac.DONTCARE
         self.dl_src = mac.DONTCARE
         self.dl_type = 0
@@ -1436,6 +1471,7 @@ class Flow(object):
 
 class FlowWildcards(object):
     def __init__(self):
+        self.metadata_mask = 0
         self.dl_dst_mask = 0
         self.dl_src_mask = 0
         self.vlan_vid_mask = 0
@@ -1476,6 +1512,14 @@ class OFPMatch(object):
             self.append_field(ofproto_v1_2.OXM_OF_IN_PHY_PORT,
                               self.flow.in_phy_port)
 
+        if self.wc.ft_test(ofproto_v1_2.OFPXMT_OFB_METADATA):
+            if self.wc.metadata_mask == UINT64_MAX:
+                header = ofproto_v1_2.OXM_OF_METADATA
+            else:
+                header = ofproto_v1_2.OXM_OF_METADATA_W
+            self.append_field(header, self.flow.metadata,
+                              self.wc.metadata_mask)
+
         if self.wc.ft_test(ofproto_v1_2.OFPXMT_OFB_ETH_DST):
             if self.wc.dl_dst_mask:
                 header = ofproto_v1_2.OXM_OF_ETH_DST_W
@@ -1498,7 +1542,8 @@ class OFPMatch(object):
                 header = ofproto_v1_2.OXM_OF_VLAN_VID
             else:
                 header = ofproto_v1_2.OXM_OF_VLAN_VID_W
-            self.append_field(header, self.flow.vlan_vid, self.vlan_vid_mask)
+            self.append_field(header, self.flow.vlan_vid,
+                              self.wc.vlan_vid_mask)
 
         if self.wc.ft_test(ofproto_v1_2.OFPXMT_OFB_VLAN_PCP):
             self.append_field(ofproto_v1_2.OXM_OF_VLAN_PCP, self.flow.vlan_pcp)
@@ -1558,17 +1603,17 @@ class OFPMatch(object):
             self.append_field(ofproto_v1_2.OXM_OF_ARP_OP, self.flow.arp_op)
 
         if self.wc.ft_test(ofproto_v1_2.OFPXMT_OFB_ARP_SPA):
-            if self.wc.arp_spa_mask:
-                header = ofproto_v1_2.OXM_OF_ARP_SPA_W
-            else:
+            if self.wc.arp_spa_mask == UINT32_MAX:
                 header = ofproto_v1_2.OXM_OF_ARP_SPA
+            else:
+                header = ofproto_v1_2.OXM_OF_ARP_SPA_W
             self.append_field(header, self.flow.arp_spa, self.wc.arp_spa_mask)
 
         if self.wc.ft_test(ofproto_v1_2.OFPXMT_OFB_ARP_TPA):
-            if self.wc.arp_tpa_mask:
-                header = ofproto_v1_2.OXM_OF_ARP_TPA_W
-            else:
+            if self.wc.arp_tpa_mask == UINT32_MAX:
                 header = ofproto_v1_2.OXM_OF_ARP_TPA
+            else:
+                header = ofproto_v1_2.OXM_OF_ARP_TPA_W
             self.append_field(header, self.flow.arp_tpa, self.wc.arp_tpa_mask)
 
         if self.wc.ft_test(ofproto_v1_2.OFPXMT_OFB_ARP_SHA):
@@ -1602,10 +1647,10 @@ class OFPMatch(object):
                               self.wc.ipv6_dst_mask)
 
         if self.wc.ft_test(ofproto_v1_2.OFPXMT_OFB_IPV6_FLABEL):
-            if self.wc.ipv6_flabel_mask:
-                header = ofproto_v1_2.OXM_OF_IPV6_FLABEL_W
-            else:
+            if self.wc.ipv6_flabel_mask == UINT32_MAX:
                 header = ofproto_v1_2.OXM_OF_IPV6_FLABEL
+            else:
+                header = ofproto_v1_2.OXM_OF_IPV6_FLABEL_W
             self.append_field(header, self.flow.ipv6_flabel,
                               self.wc.ipv6_flabel_mask)
 
@@ -1676,6 +1721,14 @@ class OFPMatch(object):
     def set_in_phy_port(self, phy_port):
         self.wc.ft_set(ofproto_v1_2.OFPXMT_OFB_IN_PHY_PORT)
         self.flow.in_phy_port = phy_port
+
+    def set_metadata(self, metadata):
+        self.set_metadata_masked(metadata, UINT64_MAX)
+
+    def set_metadata_masked(self, metadata, mask):
+        self.wc.ft_set(ofproto_v1_2.OFPXMT_OFB_METADATA)
+        self.wc.metadata_mask = mask
+        self.flow.metadata = metadata & mask
 
     def set_dl_dst(self, dl_dst):
         self.wc.ft_set(ofproto_v1_2.OFPXMT_OFB_ETH_DST)
@@ -1829,8 +1882,7 @@ class OFPMatch(object):
         self.flow.ipv6_dst = [x & y for (x, y) in itertools.izip(dst, mask)]
 
     def set_ipv6_flabel(self, flabel):
-        self.wc.ft_set(ofproto_v1_2.OFPXMT_OFB_IPV6_FLABEL)
-        self.flow.ipv6_flabel = flabel
+        self.set_ipv6_flabel_masked(flabel, UINT32_MAX)
 
     def set_ipv6_flabel_masked(self, flabel, mask):
         self.wc.ft_set(ofproto_v1_2.OFPXMT_OFB_IPV6_FLABEL)
@@ -1879,7 +1931,11 @@ class OFPMatchField(object):
 
     def __init__(self, header):
         self.header = header
-        self.n_bytes = struct.calcsize(self.pack_str)
+        hasmask = (header >> 8) & 1
+        if hasmask:
+            self.n_bytes = (header & 0xff) / 2
+        else:
+            self.n_bytes = header & 0xff
         self.length = 0
 
     @staticmethod
@@ -1890,9 +1946,11 @@ class OFPMatchField(object):
     @classmethod
     def parser(cls, buf, offset):
         (header,) = struct.unpack_from('!I', buf, offset)
-        # TODO: handle unknown field
         cls_ = OFPMatchField._FIELDS_HEADERS.get(header)
-        field = cls_.field_parser(header, buf, offset)
+        if cls_:
+            field = cls_.field_parser(header, buf, offset)
+        else:
+            field = OFPMatchField(header)
         field.length = (header & 0xff) + 4
         return field
 
@@ -1936,10 +1994,10 @@ class OFPMatchField(object):
                                      *value)
         self.length += self.n_bytes
 
-    def putv6(self, buf, offset, value, mask):
+    def putv6(self, buf, offset, value, mask=None):
         self._put_header(buf, offset)
         self._putv6(buf, offset + self.length, value)
-        if len(mask):
+        if mask and len(mask):
             self._putv6(buf, offset + self.length, mask)
 
     def oxm_len(self):
@@ -1953,6 +2011,17 @@ class MTInPort(OFPMatchField):
     def __init__(self, header, value, mask=None):
         super(MTInPort, self).__init__(header)
         self.value = value
+
+
+@OFPMatchField.register_field_header([ofproto_v1_2.OXM_OF_METADATA,
+                                      ofproto_v1_2.OXM_OF_METADATA_W])
+class MTMetadata(OFPMatchField):
+    pack_str = '!Q'
+
+    def __init__(self, header, value, mask=None):
+        super(MTMetadata, self).__init__(header)
+        self.value = value
+        self.mask = mask
 
 
 @OFPMatchField.register_field_header([ofproto_v1_2.OXM_OF_IN_PHY_PORT])
@@ -1993,7 +2062,6 @@ class MTEthType(OFPMatchField):
     def __init__(self, header, value, mask=None):
         super(MTEthType, self).__init__(header)
         self.value = value
-        self.mask = mask
 
 
 @OFPMatchField.register_field_header([ofproto_v1_2.OXM_OF_VLAN_VID,
@@ -2190,9 +2258,25 @@ class MTArpTha(OFPMatchField):
         self.mask = mask
 
 
+class MTIPv6(object):
+    @classmethod
+    def field_parser(cls, header, buf, offset):
+        hasmask = (header >> 8) & 1
+        if hasmask:
+            pack_str = '!' + cls.pack_str[1:] * 2
+            value = struct.unpack_from(pack_str, buf, offset + 4)
+            return cls(header, list(value[:8]), list(value[8:]))
+        else:
+            value = struct.unpack_from(cls.pack_str, buf, offset + 4)
+            return cls(header, list(value))
+
+    def serialize(self, buf, offset):
+        self.putv6(buf, offset, self.value, self.mask)
+
+
 @OFPMatchField.register_field_header([ofproto_v1_2.OXM_OF_IPV6_SRC,
                                       ofproto_v1_2.OXM_OF_IPV6_SRC_W])
-class MTIPv6Src(OFPMatchField):
+class MTIPv6Src(MTIPv6, OFPMatchField):
     pack_str = '!8H'
 
     def __init__(self, header, value, mask=None):
@@ -2200,22 +2284,16 @@ class MTIPv6Src(OFPMatchField):
         self.value = value
         self.mask = mask
 
-    def serialize(self, buf, offset):
-        self.putv6(buf, offset, self.value, self.mask)
-
 
 @OFPMatchField.register_field_header([ofproto_v1_2.OXM_OF_IPV6_DST,
                                       ofproto_v1_2.OXM_OF_IPV6_DST_W])
-class MTIPv6Dst(OFPMatchField):
+class MTIPv6Dst(MTIPv6, OFPMatchField):
     pack_str = '!8H'
 
     def __init__(self, header, value, mask=None):
         super(MTIPv6Dst, self).__init__(header)
         self.value = value
         self.mask = mask
-
-    def serialize(self, buf, offset):
-        self.putv6(buf, offset, self.value, self.mask)
 
 
 @OFPMatchField.register_field_header([ofproto_v1_2.OXM_OF_IPV6_FLABEL,
@@ -2257,7 +2335,7 @@ class MTICMPV6Code(OFPMatchField):
 
 
 @OFPMatchField.register_field_header([ofproto_v1_2.OXM_OF_IPV6_ND_TARGET])
-class MTIPv6NdTarget(OFPMatchField):
+class MTIPv6NdTarget(MTIPv6, OFPMatchField):
     pack_str = '!8H'
 
     def __init__(self, header, value, mask=None):
@@ -2265,7 +2343,7 @@ class MTIPv6NdTarget(OFPMatchField):
         self.value = value
 
     def serialize(self, buf, offset):
-        self.putv6(buf, offset, self.value, self.mask)
+        self.putv6(buf, offset, self.value)
 
 
 @OFPMatchField.register_field_header([ofproto_v1_2.OXM_OF_IPV6_ND_SLL])

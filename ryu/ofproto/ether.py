@@ -14,5 +14,9 @@
 # limitations under the License.
 
 
-version_info = (1, 1)
-version = '.'.join(map(str, version_info))
+ETH_TYPE_IP = 0x0800
+ETH_TYPE_ARP = 0x0806
+ETH_TYPE_8021Q = 0x8100
+ETH_TYPE_IPV6 = 0x86dd
+ETH_TYPE_MPLS = 0x8847
+ETH_TYPE_SLOW = 0x8809

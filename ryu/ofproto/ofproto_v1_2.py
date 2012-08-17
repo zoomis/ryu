@@ -384,7 +384,7 @@ OFPFF_CHECK_OVERLAP = 1 << 1    # Check for overlapping entries first.
 OFPFF_RESET_COUNT = 1 << 2    # Reset flow packet and byte counts.
 
 # struct ofp_group_mod
-OFP_GROUP_MOD_PACK_STR = '!HBBI'
+OFP_GROUP_MOD_PACK_STR = '!HBxI'
 OFP_GROUP_MOD_SIZE = 16
 assert (calcsize(OFP_GROUP_MOD_PACK_STR) + OFP_HEADER_SIZE ==
         OFP_GROUP_MOD_SIZE)
@@ -420,6 +420,9 @@ OFP_STATS_REQUEST_PACK_STR = '!HH4x'
 OFP_STATS_REQUEST_SIZE = 16
 assert (calcsize(OFP_STATS_REQUEST_PACK_STR) + OFP_HEADER_SIZE ==
         OFP_STATS_REQUEST_SIZE)
+
+# enum ofp_stats_reply_flags
+OFPSF_REPLY_MORE = 1 << 0       # More replies to follow.
 
 # struct ofp_stats_reply
 OFP_STATS_REPLY_PACK_STR = '!HH4x'
@@ -523,7 +526,7 @@ OFP_BUCKET_COUNTER_SIZE = 16
 assert calcsize(OFP_BUCKET_COUNTER_PACK_STR) == OFP_BUCKET_COUNTER_SIZE
 
 # struct ofp_group_desc_stats
-OFP_GROUP_DESC_STATS_PACK_STR = '!HBBI'
+OFP_GROUP_DESC_STATS_PACK_STR = '!HBxI'
 OFP_GROUP_DESC_STATS_SIZE = 8
 assert calcsize(OFP_GROUP_DESC_STATS_PACK_STR) == OFP_GROUP_DESC_STATS_SIZE
 

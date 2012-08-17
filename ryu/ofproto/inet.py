@@ -14,5 +14,15 @@
 # limitations under the License.
 
 
-version_info = (1, 1)
-version = '.'.join(map(str, version_info))
+IPPROTO_IP = 0
+IPPROTO_HOPOPTS = 0
+IPPROTO_ICMP = 1
+IPPROTO_TCP = 6
+IPPROTO_UDP = 17
+IPPROTO_ROUTING = 43
+IPPROTO_FRAGMENT = 44
+IPPROTO_AH = 51
+IPPROTO_ICMPV6 = 58
+IPPROTO_NONE = 59
+IPPROTO_DSTOPTS = 60
+IPPROTO_SCTP = 132
