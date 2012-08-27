@@ -19,6 +19,8 @@ from webob import Request, Response
 
 from ryu.base import app_manager
 from ryu.controller import network
+from ryu.controller.flowvisor_cli import FlowVisor_CLI
+from ryu.controller import dpset
 from ryu.exception import NetworkNotFound, NetworkAlreadyExist
 from ryu.exception import PortNotFound, PortAlreadyExist
 from ryu.app.wsgi import ControllerBase, WSGIApplication
@@ -186,16 +188,84 @@ class PortController(ControllerBase):
         return Response(status=200)
 
 
+class FlowVisorController(ControllerBase):
+    def __init__(self, req, link, data, **config):
+        super(FlowVisorController, self).__init__(req, link, data, **config)
+        self.fv_cli = data.get('fv_cli')
+        self.nw = data.get('nw')
+        self.dpset = data.get('dpset')
+        assert self.fv_cli is not None
+        assert self.nw is not None
+        assert self.dpset is not None
+
+    def listSlices(self, req, **_kwargs):
+        body = json.dumps(self.fv_cli.listSlices())
+        if (body.find("Connection refused") > 0):
+            status = 500
+        else:
+            status = 200
+
+        return Response(status=status, content_type='application/json', body=body)
+
+    def createSlice(self, req, sliceName, ip, port, pwd):
+        body = json.dumps(self.fv_cli.createSlice(sliceName, ip, port, pwd))
+        if (body.find("success") > 0):
+            status = 200
+        elif (body.find("Cannot create slice with existing name") > 0):
+            status = 409
+        else:
+            status = 500
+
+        return Response(status=status, content_type='application/json', body=body)
+
+    def deleteSlice(self, req, sliceName):
+        body = json.dumps(self.fv_cli.deleteSlice(sliceName))
+        if (body.find("success") > 0):
+            status = 200
+        elif (body.find("slice does not exist") > 0):
+            status = 409
+        else:
+            status = 500
+
+        return Response(status=status, content_type='application/json', body=body)
+
+    # Delegate control of a network to the controller in charge of the specified slice
+    def delegateNetwork(self, req, sliceName, network_id):
+        status = 200
+
+        # Install FV rules to route packets to controller
+        for (dpid, port) in self.nw.networks[network_id]:
+            ret = self.fv_cli.routeToController(sliceName, dpid, port)
+            if (ret.find("success") < 0):
+                # Error occured while attempting to install FV rule
+                status = 500
+                break
+
+            # Now delete rules installed in the switches
+            dp = self.dpset.get(dpid)
+            if dp is not None:
+                dp.send_delete_all_flows()
+
+        # If error occurs in the middle of installing rules,
+        # should previously installed rules be deleted??
+        body = json.dumps(ret)
+        return Response(status=status, content_type='application/json', body=body)
+
+
 class restapi(app_manager.RyuApp):
     _CONTEXTS = {
         'network': network.Network,
-        'wsgi': WSGIApplication
+        'wsgi': WSGIApplication,
+        'fv_cli' : FlowVisor_CLI,
+        'dpset': dpset.DPSet
         }
 
     def __init__(self, *args, **kwargs):
         super(restapi, self).__init__(*args, **kwargs)
         self.nw = kwargs['network']
+        self.fv_cli = kwargs['fv_cli']
         wsgi = kwargs['wsgi']
+        self.dpset = kwargs['dpset']
         mapper = wsgi.mapper
 
         # Change packet handler
@@ -263,3 +333,24 @@ class restapi(app_manager.RyuApp):
         mapper.connect('ports', uri,
                        controller=PortController, action='delete',
                        conditions=dict(method=['DELETE']))
+
+        # FlowVisor related APIs
+        wsgi.registory['FlowVisorController'] = {'fv_cli' : self.fv_cli,
+                                                 'nw' : self.nw,
+                                                 'dpset' : self.dpset}
+        uri = '/v1.0/flowvisor'
+        mapper.connect('flowvisor', uri,
+                       controller=FlowVisorController, action='listSlices',
+                       conditions=dict(method=['GET']))
+
+        mapper.connect('flowvisor', uri + '/{sliceName}',
+                       controller=FlowVisorController, action='deleteSlice',
+                       conditions=dict(method=['DELETE']))
+
+        mapper.connect('flowvisor', uri + '/{sliceName}_{ip}_{port}_{pwd}',
+                       controller=FlowVisorController, action='createSlice',
+                       conditions=dict(method=['POST']))
+
+        mapper.connect('flowvisor', uri + '/{sliceName}/assign/{network_id}',
+                       controller=FlowVisorController, action='delegateNetwork',
+                       conditions=dict(method=['POST']))
