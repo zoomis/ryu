@@ -22,7 +22,7 @@ from ryu.controller import network
 from ryu.controller.flowvisor_cli import FlowVisor_CLI
 from ryu.controller import dpset
 from ryu.exception import NetworkNotFound, NetworkAlreadyExist
-from ryu.exception import PortNotFound, PortAlreadyExist
+from ryu.exception import PortNotFound, PortAlreadyExist, PortUnknown
 from ryu.app.wsgi import ControllerBase, WSGIApplication
 from ryu.exception import MacAddressDuplicated
 
@@ -151,10 +151,15 @@ class NetworkController(ControllerBase):
 class PortController(ControllerBase):
     def __init__(self, req, link, data, **config):
         super(PortController, self).__init__(req, link, data, **config)
-        self.nw = data
+        self.nw = data.get('nw')
+        self.fv_cli = data.get('fv_cli')
+        assert self.fv_cli is not None
+        assert self.nw is not None
 
     def create(self, req, network_id, dpid, port_id, **_kwargs):
         try:
+            self.fv_cli.updatePort(network_id, int(dpid, 16),
+                                    int(port_id), False)
             self.nw.create_port(network_id, int(dpid, 16), int(port_id))
         except NetworkNotFound:
             return Response(status=404)
@@ -165,8 +170,15 @@ class PortController(ControllerBase):
 
     def update(self, req, network_id, dpid, port_id, **_kwargs):
         try:
+            try:
+                old_network_id = self.nw.get_network(int(dpid, 16), int(port_id))
+            except PortUnknown:
+                old_network_id = None
+
+            self.fv_cli.updatePort(network_id, int(dpid, 16),
+                                    int(port_id), True, old_network_id)
             self.nw.update_port(network_id, int(dpid, 16), int(port_id))
-        except NetworkNotFound:
+        except (NetworkNotFound, PortUnknown):
             return Response(status=404)
 
         return Response(status=200)
@@ -181,6 +193,7 @@ class PortController(ControllerBase):
 
     def delete(self, req, network_id, dpid, port_id, **_kwargs):
         try:
+            self.fv_cli.deletePort(network_id, int(dpid, 16), int(port_id))
             self.nw.remove_port(network_id, int(dpid, 16), int(port_id))
         except (NetworkNotFound, PortNotFound):
             return Response(status=404)
@@ -230,24 +243,88 @@ class FlowVisorController(ControllerBase):
         return Response(status=status, content_type='application/json', body=body)
 
     # Delegate control of a network to the controller in charge of the specified slice
-    def delegateNetwork(self, req, sliceName, network_id):
+    def assignNetwork(self, req, sliceName, network_id):
         status = 200
+        ret = ""
 
-        # Install FV rules to route packets to controller
-        for (dpid, port) in self.nw.networks[network_id]:
-            ret = self.fv_cli.routeToController(sliceName, dpid, port)
-            if (ret.find("success") < 0):
-                # Error occured while attempting to install FV rule
-                status = 500
-                break
+        # Check if network has been assigned to another controller
+        # If so, must unassign it from the other controller first
+        slice = self.fv_cli.getSliceName(network_id)
+        if slice:
+            if (slice == sliceName):  # Should this result in an error instead?
+                return Response(status=status)
 
-            # Now delete rules installed in the switches
-            dp = self.dpset.get(dpid)
-            if dp is not None:
-                dp.send_delete_all_flows()
+            response = self.unassignNetwork(req, network_id)
+            status = response.status_code
+        
+        if (status == 200):
+            # Install FV rules to route packets to controller
+            for (dpid, port) in self.nw.list_ports(network_id):
+                ret = self.fv_cli.addFlowSpace(sliceName, dpid, port)
+                if (ret.find("success") < 0):
+                    # Error occured while attempting to install FV rule
+                    status = 500
+                    break
 
-        # If error occurs in the middle of installing rules,
-        # should previously installed rules be deleted??
+                # Keep track of installed rules related to network
+                self.fv_cli.addFlowSpaceID(dpid, port, ret[9:])
+
+                # Now delete rules installed in the switches
+                dp = self.dpset.get(dpid)
+                if dp is not None:
+                    dp.send_delete_all_flows()
+
+        if (status == 500):
+            # Error occured in the middle of installing rules
+            # Previously installed rules be deleted
+            self.unassignNetwork(req, network_id)
+
+        if (status == 200):
+            self.fv_cli.slice2nw_add(sliceName, network_id)
+
+        body = json.dumps(ret)
+        return Response(status=status, content_type='application/json', body=body)
+
+    def unassignNetwork(self, req, network_id):
+        status = 200
+        ret = ""
+
+        # Check if network has been assigned to a controller
+        if self.fv_cli.getSliceName(network_id):
+            # Remove FlowSpace rules associated with the network
+            ids = self.nw.list_ports(network_id)
+            if ids is not None:
+                for (dpid, port) in ids:
+                    try:
+                        flowspace_id = self.fv_cli.getFlowSpaceID(dpid, port)
+                    except PortUnknown:
+                        # Continue instead of break due to possibility
+                        #    this function was called to remedy a half-
+                        #    completed call to assignNetwork
+                        status = 404
+                        continue
+
+                    ret = self.fv_cli.removeFlowSpace(flowspace_id)
+                    if (ret.find("success") < 0):
+                        status = 500
+                        break
+
+                    self.fv_cli.delFlowSpaceID(dpid, port)
+            else:
+                status = 404
+
+            # Now delete rules installed in relevant switches
+            for (dpid, port) in self.nw.list_ports(network_id):
+                dp = self.dpset.get(dpid)
+                if dp is not None:
+                    dp.send_delete_all_flows()
+
+            if (status == 200):
+                self.fv_cli.slice2nw_del(network_id)
+        else:
+            # Should this result in an error status and message instead?
+            ret = "success!"
+
         body = json.dumps(ret)
         return Response(status=status, content_type='application/json', body=body)
 
@@ -317,7 +394,8 @@ class restapi(app_manager.RyuApp):
                        controller=NetworkController, action='del_iface',
                        conditions=dict(method=['DELETE']))
 
-        wsgi.registory['PortController'] = self.nw
+        wsgi.registory['PortController'] = {"nw" : self.nw,
+                                            "fv_cli" : self.fv_cli}
         mapper.connect('networks', uri,
                        controller=PortController, action='lists',
                        conditions=dict(method=['GET']))
@@ -352,5 +430,10 @@ class restapi(app_manager.RyuApp):
                        conditions=dict(method=['POST']))
 
         mapper.connect('flowvisor', uri + '/{sliceName}/assign/{network_id}',
-                       controller=FlowVisorController, action='delegateNetwork',
-                       conditions=dict(method=['POST']))
+                       controller=FlowVisorController, action='assignNetwork',
+                       conditions=dict(method=['PUT']))
+
+        mapper.connect('flowvisor', uri + '/unassign/{network_id}',
+                       controller=FlowVisorController, action='unassignNetwork',
+                       conditions=dict(method=['PUT']))
+
