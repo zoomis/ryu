@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Three arguments expected:
+#    1: Name of the slice
+#    2: IP address of the slice controller
+#    3: Port number of the slice controller
+
+curl http://$RYU_API_HOST:$RYU_API_PORT/v1.0/flowvisor/$1_$2_$3 -X POST

@@ -32,7 +32,7 @@ from ryu import utils
 from ryu.app import wsgi
 from ryu.base.app_manager import AppManager
 from ryu.controller import controller
-
+from ryu.controller import flowvisor_cli
 
 FLAGS = gflags.FLAGS
 gflags.DEFINE_bool('version', False, 'output version information and exit')

@@ -212,16 +212,16 @@ class FlowVisorController(ControllerBase):
         assert self.dpset is not None
 
     def listSlices(self, req, **_kwargs):
-        body = json.dumps(self.fv_cli.listSlices())
-        if (body.find("Connection refused") > 0):
-            status = 500
-        else:
+        body = self.fv_cli.listSlices()
+        if (body.find("Slice 0") > 0):
             status = 200
+        else:
+            status = 500
 
         return Response(status=status, content_type='application/json', body=body)
 
-    def createSlice(self, req, sliceName, ip, port, pwd):
-        body = json.dumps(self.fv_cli.createSlice(sliceName, ip, port, pwd))
+    def createSlice(self, req, sliceName, ip, port):
+        body = self.fv_cli.createSlice(sliceName, ip, port)
         if (body.find("success") > 0):
             status = 200
         elif (body.find("Cannot create slice with existing name") > 0):
@@ -232,7 +232,7 @@ class FlowVisorController(ControllerBase):
         return Response(status=status, content_type='application/json', body=body)
 
     def deleteSlice(self, req, sliceName):
-        body = json.dumps(self.fv_cli.deleteSlice(sliceName))
+        body = self.fv_cli.deleteSlice(sliceName)
         if (body.find("success") > 0):
             status = 200
         elif (body.find("slice does not exist") > 0):
@@ -245,7 +245,7 @@ class FlowVisorController(ControllerBase):
     # Delegate control of a network to the controller in charge of the specified slice
     def assignNetwork(self, req, sliceName, network_id):
         status = 200
-        ret = ""
+        body = ""
 
         # Check if network has been assigned to another controller
         # If so, must unassign it from the other controller first
@@ -260,14 +260,14 @@ class FlowVisorController(ControllerBase):
         if (status == 200):
             # Install FV rules to route packets to controller
             for (dpid, port) in self.nw.list_ports(network_id):
-                ret = self.fv_cli.addFlowSpace(sliceName, dpid, port)
-                if (ret.find("success") < 0):
+                body = self.fv_cli.addFlowSpace(sliceName, dpid, port)
+                if (body.find("success") < 0):
                     # Error occured while attempting to install FV rule
                     status = 500
                     break
 
                 # Keep track of installed rules related to network
-                self.fv_cli.addFlowSpaceID(dpid, port, ret[9:])
+                self.fv_cli.addFlowSpaceID(dpid, port, body[9:])
 
                 # Now delete rules installed in the switches
                 dp = self.dpset.get(dpid)
@@ -282,12 +282,11 @@ class FlowVisorController(ControllerBase):
         if (status == 200):
             self.fv_cli.slice2nw_add(sliceName, network_id)
 
-        body = json.dumps(ret)
         return Response(status=status, content_type='application/json', body=body)
 
     def unassignNetwork(self, req, network_id):
         status = 200
-        ret = ""
+        body = ""
 
         # Check if network has been assigned to a controller
         if self.fv_cli.getSliceName(network_id):
@@ -304,8 +303,8 @@ class FlowVisorController(ControllerBase):
                         status = 404
                         continue
 
-                    ret = self.fv_cli.removeFlowSpace(flowspace_id)
-                    if (ret.find("success") < 0):
+                    body = self.fv_cli.removeFlowSpace(flowspace_id)
+                    if (body.find("success") < 0):
                         status = 500
                         break
 
@@ -323,9 +322,8 @@ class FlowVisorController(ControllerBase):
                 self.fv_cli.slice2nw_del(network_id)
         else:
             # Should this result in an error status and message instead?
-            ret = "success!"
+            body = "success!"
 
-        body = json.dumps(ret)
         return Response(status=status, content_type='application/json', body=body)
 
 
@@ -425,7 +423,7 @@ class restapi(app_manager.RyuApp):
                        controller=FlowVisorController, action='deleteSlice',
                        conditions=dict(method=['DELETE']))
 
-        mapper.connect('flowvisor', uri + '/{sliceName}_{ip}_{port}_{pwd}',
+        mapper.connect('flowvisor', uri + '/{sliceName}_{ip}_{port}',
                        controller=FlowVisorController, action='createSlice',
                        conditions=dict(method=['POST']))
 

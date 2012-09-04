@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Command line: source ryu_fvctl_rc {RYU API HOST IP} {RYU API PORT IP}
+
+if [[ -n "$1" ]]; then
+    RYU_API_HOST=$1
+fi
+if [[ -n "$2" ]]; then
+    RYU_API_PORT=$2
+fi
+
+export RYU_API_HOST=${RYU_API_HOST:-10.10.10.80}
+export RYU_API_PORT=${RYU_API_PORT:-8081}

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Two arguments expected:
+#    1: Name of the slice
+#    2: Network UUID to be assigned to the controller of the slice
+
+curl http://$RYU_API_HOST:$RYU_API_PORT/v1.0/flowvisor/$1/assign/$2 -X PUT

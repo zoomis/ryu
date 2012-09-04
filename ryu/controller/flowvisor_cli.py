@@ -1,4 +1,5 @@
 import logging
+import gflags
 
 from ryu.exception import NetworkNotFound, NetworkAlreadyExist
 from ryu.exception import PortAlreadyExist, PortNotFound, PortUnknown
@@ -6,44 +7,47 @@ from subprocess import Popen, PIPE, STDOUT
 
 LOG = logging.getLogger('ryu.controller.flowvisor_cli')
 
-# The password file name and location is dependent on individual installation...
-# Any way to get around this?
-cmdPrefix = "fvctl --passwd-file=/usr/local/etc/flowvisor/passFile "
+FLAGS = gflags.FLAGS
+gflags.DEFINE_string('fv_pass_file', '/usr/local/etc/flowvisor/passFile',
+                                        'FlowVisor control password file')
+gflags.DEFINE_string('fv_slice_default_pass', 'supersecret',
+                      'FlowVisor non-admin slice default password')
 
 class FlowVisor_CLI(object):
     def __init__(self):
         self.flowspace_ids = {} # Dictionary of {(dpid, port) : [flowspace ids]}
         self.slice2network = {} # Dictionary of {sliceName : [network_ids]}
+        self.cmdPrefix = "fvctl --passwd-file=" + FLAGS.fv_pass_file + " "
 
     def listSlices(self):
         cmdLine = "listSlices"
-        p = Popen(cmdPrefix + cmdLine, shell=True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
+        p = Popen(self.cmdPrefix + cmdLine, shell=True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
         out, err = p.communicate()
         return out
 
-    def createSlice(self, sliceName, ip, port, pwd):
+    def createSlice(self, sliceName, ip, port):
         # Use a garbage email address...
         cmdLine = "createSlice " + sliceName + " tcp:" + ip + ":" + port + " blek@blek.ca"
-        p = Popen(cmdPrefix + cmdLine, shell=True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
-        out, err = p.communicate(pwd)
+        p = Popen(self.cmdPrefix + cmdLine, shell=True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
+        out, err = p.communicate(FLAGS.fv_slice_default_pass)
         return out[14:]
 
     def deleteSlice(self, sliceName):
         cmdLine = "deleteSlice " + sliceName
-        p = Popen(cmdPrefix + cmdLine, shell=True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
+        p = Popen(self.cmdPrefix + cmdLine, shell=True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
         out, err = p.communicate()
         return out
 
     def addFlowSpace(self, sliceName, dpid, port):
         # Priority of 100 picked randomly...
         cmdLine = "addFlowSpace " + hex(dpid)[2:-1] + " 100 in_port=" + str(port) + " Slice:" + sliceName + "=4"
-        p = Popen(cmdPrefix + cmdLine, shell=True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
+        p = Popen(self.cmdPrefix + cmdLine, shell=True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
         out, err = p.communicate()
         return out
 
     def removeFlowSpace(self, flowspace_id):
         cmdLine = "removeFlowSpace " + str(flowspace_id)
-        p = Popen(cmdPrefix + cmdLine, shell=True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
+        p = Popen(self.cmdPrefix + cmdLine, shell=True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
         out, err = p.communicate()
         return out
 
