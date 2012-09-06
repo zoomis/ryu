@@ -213,7 +213,7 @@ class FlowVisorController(ControllerBase):
 
     def listSlices(self, req, **_kwargs):
         body = self.fv_cli.listSlices()
-        if (body.find("Slice 0") > 0):
+        if (body.find("Slice 0") != -1):
             status = 200
         else:
             status = 500
@@ -222,9 +222,9 @@ class FlowVisorController(ControllerBase):
 
     def createSlice(self, req, sliceName, ip, port):
         body = self.fv_cli.createSlice(sliceName, ip, port)
-        if (body.find("success") > 0):
+        if (body.find("success") != -1):
             status = 200
-        elif (body.find("Cannot create slice with existing name") > 0):
+        elif (body.find("Cannot create slice with existing name") != -1):
             status = 409
         else:
             status = 500
@@ -233,9 +233,9 @@ class FlowVisorController(ControllerBase):
 
     def deleteSlice(self, req, sliceName):
         body = self.fv_cli.deleteSlice(sliceName)
-        if (body.find("success") > 0):
+        if (body.find("success") != -1):
             status = 200
-        elif (body.find("slice does not exist") > 0):
+        elif (body.find("slice does not exist") != -1):
             status = 409
         else:
             status = 500
@@ -261,7 +261,7 @@ class FlowVisorController(ControllerBase):
             # Install FV rules to route packets to controller
             for (dpid, port) in self.nw.list_ports(network_id):
                 body = self.fv_cli.addFlowSpace(sliceName, dpid, port)
-                if (body.find("success") < 0):
+                if (body.find("success") == -1):
                     # Error occured while attempting to install FV rule
                     status = 500
                     break
@@ -304,7 +304,7 @@ class FlowVisorController(ControllerBase):
                         continue
 
                     body = self.fv_cli.removeFlowSpace(flowspace_id)
-                    if (body.find("success") < 0):
+                    if (body.find("success") == -1):
                         status = 500
                         break
 
