@@ -4,4 +4,25 @@
 #    2: IP address of the slice controller
 #    3: Port number of the slice controller
 
-curl http://$RYU_API_HOST:$RYU_API_PORT/v1.0/flowvisor/$1_$2_$3 -X POST
+if [[ -n "$1" ]]; then
+    SLICE_NAME=$1
+else
+    echo "Must specify first parameter (Name of the slice)"
+    ERR=1
+fi
+if [[ -n "$2" ]]; then
+    CTRL_IP_ADDR=$2
+else
+    echo "Must specify second parameter (Controller's IP address)"
+    ERR=1
+fi
+if [[ -n "$3" ]]; then
+    CTRL_PORT_NUM=$3
+else
+    echo "Must specify third parameter (Controller's port number)"
+    ERR=1
+fi
+
+if [[ -z "$ERR" ]]; then
+    curl http://$RYU_API_HOST:$RYU_API_PORT/v1.0/flowvisor/"$SLICE_NAME"_"$CTRL_IP_ADDR"_"$CTRL_PORT_NUM" -X POST
+fi

@@ -2,4 +2,13 @@
 # One argument expected:
 #    1: Network UUID to be assigned to the controller of the slice
 
-curl http://$RYU_API_HOST:$RYU_API_PORT/v1.0/flowvisor/unassign/$1 -X PUT
+if [[ -n "$1" ]]; then
+    NET_UUID=$1
+else
+    echo "Must specify second parameter (Network UUID)"
+    ERR=1
+fi
+
+if [[ -z "$ERR" ]]; then
+    curl http://$RYU_API_HOST:$RYU_API_PORT/v1.0/flowvisor/unassign/$NET_UUID -X PUT
+fi

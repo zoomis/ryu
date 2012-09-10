@@ -3,4 +3,19 @@
 #    1: Name of the slice
 #    2: Network UUID to be assigned to the controller of the slice
 
-curl http://$RYU_API_HOST:$RYU_API_PORT/v1.0/flowvisor/$1/assign/$2 -X PUT
+if [[ -n "$1" ]]; then
+    SLICE_NAME=$1
+else
+    echo "Must specify first parameter (Name of the slice)"
+    ERR=1
+fi
+if [[ -n "$2" ]]; then
+    NET_UUID=$2
+else
+    echo "Must specify second parameter (Network UUID)"
+    ERR=1
+fi
+
+if [[ -z "$ERR" ]]; then
+    curl http://$RYU_API_HOST:$RYU_API_PORT/v1.0/flowvisor/$SLICE_NAME/assign/$NET_UUID -X PUT
+fi

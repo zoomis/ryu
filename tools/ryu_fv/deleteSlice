@@ -2,4 +2,13 @@
 # One argument expected:
 #    1: Name of the slice
 
-curl http://$RYU_API_HOST:$RYU_API_PORT/v1.0/flowvisor/$1 -X DELETE
+if [[ -n "$1" ]]; then
+    SLICE_NAME=$1
+else
+    echo "Must specify first parameter (Name of the slice)"
+    ERR=1
+fi
+
+if [[ -z "$ERR" ]]; then
+    curl http://$RYU_API_HOST:$RYU_API_PORT/v1.0/flowvisor/$SLICE_NAME -X DELETE
+fi
