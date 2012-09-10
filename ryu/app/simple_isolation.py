@@ -26,6 +26,7 @@ from ryu.controller import mac_to_network
 from ryu.controller import mac_to_port
 from ryu.controller import network
 from ryu.controller import ofp_event
+from ryu.controller import flowvisor_cli
 from ryu.controller.handler import MAIN_DISPATCHER
 from ryu.controller.handler import CONFIG_DISPATCHER
 from ryu.controller.handler import set_ev_cls
@@ -41,15 +42,18 @@ class SimpleIsolation(app_manager.RyuApp):
     _CONTEXTS = {
         'network': network.Network,
         'dpset': dpset.DPSet,
+        'fv_cli': flowvisor_cli.FlowVisor_CLI,
+        'mac2port': mac_to_port.MacToPortTable
         }
 
     def __init__(self, *args, **kwargs):
         super(SimpleIsolation, self).__init__(*args, **kwargs)
         self.nw = kwargs['network']
         self.dpset = kwargs['dpset']
-        self.mac2port = mac_to_port.MacToPortTable()
+        self.mac2port = kwargs['mac2port']
         self.mac2net = mac_to_network.MacToNetwork(self.nw)
         self.nw.mac2net = self.mac2net # Give Network access to mac2net object
+        self.fv_cli = kwargs['fv_cli']
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -181,6 +185,31 @@ class SimpleIsolation(app_manager.RyuApp):
 
         src_nw_id = self.mac2net.get_network(src, NW_ID_UNKNOWN)
         dst_nw_id = self.mac2net.get_network(dst, NW_ID_UNKNOWN)
+
+        # Pseudo-code:
+        # If (input port belongs to a delegated network):
+        #    Add FlowSpace for (dpid, port, src_mac)
+        #    Drop current packet
+        # Else if ((port is an external) AND (src_mac belongs to a delegated network)):
+        #    Add FlowSpace for (dpid, port, src_mac)
+        #    Drop current packet
+        port_sliceName = self.fv_cli.getSliceName(port_nw_id)
+        src_sliceName = self.fv_cli.getSliceName(src_nw_id)
+        if port_sliceName or \
+           ((port_nw_id == NW_ID_EXTERNAL) and src_sliceName):
+            sliceName = port_sliceName or src_sliceName
+
+            # Only add FV rules if target slice is not default slice
+            if (sliceName != self.fv_cli.defaultSlice):
+                ret = self.fv_cli.addFlowSpace(sliceName, datapath.id, msg.in_port, haddr_to_str(src))
+                if (ret.find("success") == -1):
+                    # Error, how to handle?
+                    pass
+                else:
+                    self.fv_cli.addFlowSpaceID(datapath.id, msg.in_port, src, int(ret[9:]))
+
+                self._drop_packet(msg)
+                return
 
         # we handle multicast packet as same as broadcast
         broadcast = (dst == mac.BROADCAST) or mac.is_multicast(dst)

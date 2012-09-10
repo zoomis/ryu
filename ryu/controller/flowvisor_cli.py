@@ -3,6 +3,7 @@ import gflags
 
 from ryu.exception import NetworkNotFound, NetworkAlreadyExist
 from ryu.exception import PortAlreadyExist, PortNotFound, PortUnknown
+from ryu.app.rest_nw_id import NW_ID_UNKNOWN, NW_ID_EXTERNAL
 from subprocess import Popen, PIPE, STDOUT
 
 LOG = logging.getLogger('ryu.controller.flowvisor_cli')
@@ -12,12 +13,15 @@ gflags.DEFINE_string('fv_pass_file', '/usr/local/etc/flowvisor/passFile',
                                         'FlowVisor control password file')
 gflags.DEFINE_string('fv_slice_default_pass', 'supersecret',
                       'FlowVisor non-admin slice default password')
+gflags.DEFINE_string('fv_default_slice', 'fvadmin',
+                      'FlowVisor default slice name')
 
 class FlowVisor_CLI(object):
     def __init__(self):
-        self.flowspace_ids = {} # Dictionary of {(dpid, port) : [flowspace ids]}
+        self.flowspace_ids = {} # Dictionary of {(dpid, port, mac) : [flowspace id]}
         self.slice2network = {} # Dictionary of {sliceName : [network_ids]}
         self.cmdPrefix = "fvctl --passwd-file=" + FLAGS.fv_pass_file + " "
+        self.defaultSlice = FLAGS.fv_default_slice
 
     def listSlices(self):
         cmdLine = "listSlices"
@@ -38,9 +42,10 @@ class FlowVisor_CLI(object):
         out, err = p.communicate()
         return out
 
-    def addFlowSpace(self, sliceName, dpid, port):
+    # srcMAC is to be specified in hexadecimal notation and byte-separated by colons
+    def addFlowSpace(self, sliceName, dpid, port, srcMAC):
         # Priority of 100 picked randomly...
-        cmdLine = "addFlowSpace " + hex(dpid)[2:-1] + " 100 in_port=" + str(port) + " Slice:" + sliceName + "=4"
+        cmdLine = "addFlowSpace " + hex(dpid)[2:-1] + " 100 in_port=" + str(port) + ",dl_src=" + srcMAC + " Slice:" + sliceName + "=4"
         p = Popen(self.cmdPrefix + cmdLine, shell=True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
         out, err = p.communicate()
         return out
@@ -55,22 +60,36 @@ class FlowVisor_CLI(object):
     # The functions below are helper functions that are not CLIs
     # ==================================================================
 
-    def addFlowSpaceID(self, dpid, port, flowspace_id):
-        self.flowspace_ids[(dpid, port)] = flowspace_id
+    def addFlowSpaceID(self, dpid, port, mac, flowspace_id):
+        self.flowspace_ids[(dpid, port, mac)] = flowspace_id
 
-    def delFlowSpaceID(self, dpid, port):
-        try:
-            del self.flowspace_ids[(dpid, port)]
-        except KeyError:
-            raise PortUnknown(dpid=dpid, port=port)
+    def delFlowSpaceIDs(self, idList):
+        # idList can also be a single integer; Convert to list
+        if type(idList) is int:
+            idList = [idList]
+        
+        for tuple, id in self.flowspace_ids.items():
+            if id in idList:
+                try:
+                    del self.flowspace_ids[tuple]
+                except KeyError:
+                    # How to handle such an error?
+                    pass
 
-    def getFlowSpaceID(self, dpid, port):
-        try:
-            id = self.flowspace_ids[(dpid, port)]
-        except KeyError:
-            raise PortUnknown(dpid=dpid, port=port)
-        else:
-            return id
+    # Returns a list of FlowSpace IDs whose tuple matches the input parameters
+    # Use 'None' as a wildcard
+    def getFlowSpaceIDs(self, dpid=None, port=None, mac=None):
+        idList = []
+
+        for tuple, id in self.flowspace_ids.items():
+            dpid_match = (dpid is None) or (dpid in tuple)
+            port_match = (port is None) or (port in tuple)
+            mac_match = (mac is None) or (mac in tuple)
+
+            if (dpid_match and port_match and mac_match):
+                idList.append(id)
+
+        return idList
 
     def slice2nw_add(self, sliceName, network_id):
         self.slice2network.setdefault(sliceName, [])
@@ -94,39 +113,24 @@ class FlowVisor_CLI(object):
 
     # Called when PortController wants to create or update a port
     def updatePort(self, network_id, dpid, port, portExists, old_network_id=None):
-        if portExists: # Updating an existing port
-            if self.getSliceName(old_network_id):
-                # Must delete old FlowSpace rule for this port from old network
-                try:
-                    old_flowspace_id = self.getFlowSpaceID(dpid, port)
-                except PortUnknown:
-                    raise
-                else:
-                    self.removeFlowSpace(old_flowspace_id)
+        if portExists: # Updating an existing port whose network has changed
+            self.deletePort(old_network_id, dpid, port)
 
-        sliceName = self.getSliceName(network_id)
-        if sliceName:
-            # Must install FlowSpace rule for this new port in the network
-            ret = self.addFlowSpace(sliceName, dpid, port)
-            if (ret.find("success") < 0):
-                # Error occured while attempting to install FV rule
-                # TO DO: What exception to pass back to caller??
-                # status = 500
-                raise
-
-            # Keep track of installed rules related to network
-            self.addFlowSpaceID(dpid, port, ret[9:])
+        # Leave adding new FlowSpace IDs to application's packet handler
 
     # Called when PortController wants to delete a port
     def deletePort(self, network_id, dpid, port):
-        if self.getSliceName(network_id):
+        if self.getSliceName(network_id) or (network_id == NW_ID_EXTERNAL):
             try:
-                flowspace_id = self.getFlowSpaceID(dpid, port)
+                flowspace_ids = self.getFlowSpaceIDs(dpid, port)
             except PortUnknown:
                 raise PortNotFound(dpid=dpid, port=port, network_id=network_id)
             else:
-                self.removeFlowSpace(flowspace_id)
-                self.delFlowSpaceID(dpid, port)
+                for id in flowspace_ids:
+                    ret = self.removeFlowSpace(id)
+                    # To Do: Error check on ret
+
+                self.delFlowSpaceIDs(flowspace_ids)
             
             # Should we delete entry from the switch's flow table?
             # Or should we assume the application will take care of it?
