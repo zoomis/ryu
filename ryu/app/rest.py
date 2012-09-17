@@ -27,6 +27,7 @@ from ryu.exception import PortNotFound, PortAlreadyExist, PortUnknown
 from ryu.app.wsgi import ControllerBase, WSGIApplication
 from ryu.exception import MacAddressDuplicated
 from ryu.lib.mac import is_multicast, haddr_to_str
+from ryu.app.rest_nw_id import NW_ID_EXTERNAL
 
 ## TODO:XXX
 ## define db interface and store those information into db
@@ -155,8 +156,10 @@ class PortController(ControllerBase):
         super(PortController, self).__init__(req, link, data, **config)
         self.nw = data.get('nw')
         self.fv_cli = data.get('fv_cli')
+        self.mac2port = data.get('mac2port')
         assert self.fv_cli is not None
         assert self.nw is not None
+        assert self.mac2port is not None
 
     def create(self, req, network_id, dpid, port_id, **_kwargs):
         try:
@@ -194,6 +197,21 @@ class PortController(ControllerBase):
     def delete(self, req, network_id, dpid, port_id, **_kwargs):
         try:
             self.fv_cli.deletePort(network_id, int(dpid, 16), int(port_id))
+            
+            # Find MAC that was associated with port and remove any other
+            #    FlowSpace rules that may contain it
+            macList = self.mac2port.mac_list(int(dpid, 16), int(port_id))
+            for mac in macList:
+                flowspace_ids = self.fv_cli.getFlowSpaceIDs(None, None, mac)
+
+                for id in flowspace_ids:
+                    ret = self.fv_cli.removeFlowSpace(id)
+                    if (ret.find("success") == -1):
+                        # Error, how to handle?
+                        pass
+
+                self.fv_cli.delFlowSpaceIDs(flowspace_ids)
+                    
             self.nw.remove_port(network_id, int(dpid, 16), int(port_id))
         except (NetworkNotFound, PortNotFound):
             return Response(status=404)
@@ -264,6 +282,22 @@ class FlowVisorController(ControllerBase):
             for (dpid, port) in self.nw.list_ports(network_id):
                 for mac in self.mac2port.mac_list(dpid, port):
                     if not is_multicast(mac):
+                        # Install rule for MAC for all EXTERNAL ports throughout network
+                        for (dpid2, port2) in self.nw.list_ports(NW_ID_EXTERNAL):
+                            if (dpid2 == dpid):
+                                continue
+
+                            body = self.fv_cli.addFlowSpace(sliceName, dpid2, port2, haddr_to_str(mac))
+                            if (body.find("success") == -1):
+                                status = 500
+                                break
+
+                            self.fv_cli.addFlowSpaceID(dpid2, port2, mac, int(body[9:]))
+
+                        if (status == 500):
+                            break
+
+                        # Now install rule for the target switch 
                         body = self.fv_cli.addFlowSpace(sliceName, dpid, port, haddr_to_str(mac))
                         if (body.find("success") == -1):
                             # Error occured while attempting to install FV rule
@@ -272,7 +306,7 @@ class FlowVisorController(ControllerBase):
 
                         # Keep track of installed rules related to network
                         self.fv_cli.addFlowSpaceID(dpid, port, mac, int(body[9:]))
-
+                            
                 if (status == 500):
                     break
 
@@ -301,16 +335,7 @@ class FlowVisorController(ControllerBase):
             macs = self.nw.mac2net.list_macs(network_id)
             if macs is not None:
                 for mac in macs:
-                    #try:
                     flowspace_ids = self.fv_cli.getFlowSpaceIDs(None, None, mac)
-                    '''
-                    except PortUnknown:
-                        # Continue instead of break due to possibility
-                        #    this function was called to remedy a half-
-                        #    completed call to assignNetwork
-                        status = 404
-                        continue
-                    '''
 
                     for id in flowspace_ids:
                         body = self.fv_cli.removeFlowSpace(id)
@@ -405,7 +430,8 @@ class restapi(app_manager.RyuApp):
                        conditions=dict(method=['DELETE']))
 
         wsgi.registory['PortController'] = {"nw" : self.nw,
-                                            "fv_cli" : self.fv_cli}
+                                            "fv_cli" : self.fv_cli,
+                                            "mac2port" : self.mac2port}
         mapper.connect('networks', uri,
                        controller=PortController, action='lists',
                        conditions=dict(method=['GET']))

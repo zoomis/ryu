@@ -18,7 +18,7 @@ gflags.DEFINE_string('fv_default_slice', 'fvadmin',
 
 class FlowVisor_CLI(object):
     def __init__(self):
-        self.flowspace_ids = {} # Dictionary of {(dpid, port, mac) : [flowspace id]}
+        self.flowspace_ids = {} # Dictionary of {(dpid, port, mac) : flowspace_id}
         self.slice2network = {} # Dictionary of {sliceName : [network_ids]}
         self.cmdPrefix = "fvctl --passwd-file=" + FLAGS.fv_pass_file + " "
         self.defaultSlice = FLAGS.fv_default_slice

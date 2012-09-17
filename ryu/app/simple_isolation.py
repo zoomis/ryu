@@ -186,7 +186,6 @@ class SimpleIsolation(app_manager.RyuApp):
         src_nw_id = self.mac2net.get_network(src, NW_ID_UNKNOWN)
         dst_nw_id = self.mac2net.get_network(dst, NW_ID_UNKNOWN)
 
-        # Pseudo-code:
         # If (input port belongs to a delegated network):
         #    Add FlowSpace for (dpid, port, src_mac)
         #    Drop current packet
@@ -199,8 +198,30 @@ class SimpleIsolation(app_manager.RyuApp):
            ((port_nw_id == NW_ID_EXTERNAL) and src_sliceName):
             sliceName = port_sliceName or src_sliceName
 
-            # Only add FV rules if target slice is not default slice
-            if (sliceName != self.fv_cli.defaultSlice):
+            # Add FV rules if target the slice is not the default slice and if
+            #    there currently exists no rules matching (dpid, port, mac).
+            #    The second condition avoids installing duplicate rules if subsequent
+            #    packets are queued in Ryu before rule installation triggered
+            #    from first packet is completed
+            if (sliceName != self.fv_cli.defaultSlice) and \
+               (len(self.fv_cli.getFlowSpaceIDs(datapath.id, msg.in_port, src)) == 0):
+                # ORDER OF INSTALLING RULES IS IMPORTANT! Install rules for other switches
+                #   before installing rules for source switch. This avoids subsequent
+                #   packets from reaching non-source switches before rules can be properly
+                #   installed on them, which will trigger duplicate rules to be isntalled.
+                # Need to install mac for all EXTERNAL ports throughout network
+                for (dpid, port) in self.nw.list_ports(NW_ID_EXTERNAL):
+                    if (dpid == datapath.id):
+                        continue
+
+                    ret = self.fv_cli.addFlowSpace(sliceName, dpid, port, haddr_to_str(src))
+                    if (ret.find("success") == -1):
+                        # Error, how to handle?
+                        pass
+                    else:
+                        self.fv_cli.addFlowSpaceID(dpid, port, src, int(ret[9:]))
+
+                # Now install rule on source switch
                 ret = self.fv_cli.addFlowSpace(sliceName, datapath.id, msg.in_port, haddr_to_str(src))
                 if (ret.find("success") == -1):
                     # Error, how to handle?
@@ -208,8 +229,8 @@ class SimpleIsolation(app_manager.RyuApp):
                 else:
                     self.fv_cli.addFlowSpaceID(datapath.id, msg.in_port, src, int(ret[9:]))
 
-                self._drop_packet(msg)
-                return
+            self._drop_packet(msg)
+            return
 
         # we handle multicast packet as same as broadcast
         broadcast = (dst == mac.BROADCAST) or mac.is_multicast(dst)
