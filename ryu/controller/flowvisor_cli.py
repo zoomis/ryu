@@ -9,6 +9,7 @@ from subprocess import Popen, PIPE, STDOUT
 LOG = logging.getLogger('ryu.controller.flowvisor_cli')
 
 FLAGS = gflags.FLAGS
+gflags.DEFINE_string('fv_api_port', 8080, 'FlowVisor API port number')
 gflags.DEFINE_string('fv_pass_file', '/usr/local/etc/flowvisor/passFile',
                                         'FlowVisor control password file')
 gflags.DEFINE_string('fv_slice_default_pass', 'supersecret',
@@ -20,7 +21,8 @@ class FlowVisor_CLI(object):
     def __init__(self):
         self.flowspace_ids = {} # Dictionary of {(dpid, port, mac) : flowspace_id}
         self.slice2network = {} # Dictionary of {sliceName : [network_ids]}
-        self.cmdPrefix = "fvctl --passwd-file=" + FLAGS.fv_pass_file + " "
+        self.cmdPrefix = "fvctl --url=https://localhost:" + FLAGS.fv_api_port + \
+                                       " --passwd-file=" + FLAGS.fv_pass_file + " "
         self.defaultSlice = FLAGS.fv_default_slice
 
     def listSlices(self):
