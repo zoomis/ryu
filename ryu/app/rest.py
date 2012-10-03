@@ -269,8 +269,9 @@ class FlowVisorController(ControllerBase):
 
         # Verify slice actually exists first (Patch for FV bug that returns success
         # when user attempts to assign a network to a non-existent slice)
-        if (self.fv_cli.listSlices().find(sliceName) != -1):
-            status = 500
+        if (self.fv_cli.listSlices().find(sliceName) == -1):
+            status = 404
+            body = "Slice does not exist!\n"
 
         # Check if network has been assigned to another controller
         # If so, must unassign it from the other controller first
