@@ -1,5 +1,6 @@
 import logging
 import gflags
+import sys
 
 from ryu.exception import NetworkNotFound, NetworkAlreadyExist
 from ryu.exception import PortAlreadyExist, PortNotFound, PortUnknown
@@ -24,6 +25,7 @@ class FlowVisor_CLI(object):
         self.cmdPrefix = "fvctl --url=https://localhost:" + FLAGS.fv_api_port + \
                                        " --passwd-file=" + FLAGS.fv_pass_file + " "
         self.defaultSlice = FLAGS.fv_default_slice
+        self.is64bit = (sys.maxsize > 2**32)
 
     def listSlices(self):
         cmdLine = "listSlices"
@@ -47,7 +49,12 @@ class FlowVisor_CLI(object):
     # srcMAC is to be specified in hexadecimal notation and byte-separated by colons
     def addFlowSpace(self, sliceName, dpid, port, srcMAC):
         # Priority of 100 picked randomly...
-        cmdLine = "addFlowSpace " + hex(dpid)[2:-1] + " 100 in_port=" + str(port) + ",dl_src=" + srcMAC + " Slice:" + sliceName + "=4"
+        if (self.is64bit):
+            dpid_hex = hex(dpid)[2:]
+        else:
+            dpid_hex = hex(dpid)[2:-1]
+
+        cmdLine = "addFlowSpace " + dpid_hex + " 100 in_port=" + str(port) + ",dl_src=" + srcMAC + " Slice:" + sliceName + "=4"
         p = Popen(self.cmdPrefix + cmdLine, shell=True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
         out, err = p.communicate()
         return out
