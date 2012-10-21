@@ -375,7 +375,7 @@ class restapi(app_manager.RyuApp):
         'fv_cli': flowvisor_cli.FlowVisor_CLI,
         'dpset': dpset.DPSet,
         'mac2port': mac_to_port.MacToPortTable
-        }
+    }
 
     def __init__(self, *args, **kwargs):
         super(restapi, self).__init__(*args, **kwargs)

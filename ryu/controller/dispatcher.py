@@ -56,7 +56,7 @@ class EventQueue(TrackInstances):
         # This can be called when python interpreter exiting.
         # At that time, other object like EventQueueCreate can be
         # already destructed. So we can't call it blindly.
-        assert self.aux == None
+        assert self.aux is None
         ev_q = self._get_ev_q()
         if ev_q is not None and self != ev_q:
             self._queue_q_ev(EventQueueCreate(self, False))
@@ -190,7 +190,7 @@ class EventDispatcher(TrackInstances):
 
         handled = self._dispatch(ev, self.events.get(ev.__class__, []))
         if not handled:
-            LOG.info('unhandled event %s', ev)
+            LOG.debug('unhandled event %s', ev)
 
 
 class EventQueueBase(event.EventBase):

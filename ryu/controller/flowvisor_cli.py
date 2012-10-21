@@ -10,7 +10,7 @@ from subprocess import Popen, PIPE, STDOUT
 LOG = logging.getLogger('ryu.controller.flowvisor_cli')
 
 FLAGS = gflags.FLAGS
-gflags.DEFINE_string('fv_api_port', 8080, 'FlowVisor API port number')
+gflags.DEFINE_string('fv_api_port', '8080', 'FlowVisor API port number')
 gflags.DEFINE_string('fv_pass_file', '/usr/local/etc/flowvisor/passFile',
                                         'FlowVisor control password file')
 gflags.DEFINE_string('fv_slice_default_pass', 'supersecret',

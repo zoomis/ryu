@@ -14,5 +14,14 @@
 # limitations under the License.
 
 
-version_info = (1, 3)
-version = '.'.join(map(str, version_info))
+def carry_around_add(a, b):
+    c = a + b
+    return (c & 0xffff) + (c >> 16)
+
+
+def checksum(data):
+    s = 0
+    for i in range(0, len(data), 2):
+        w = data[i] + (data[i + 1] << 8)
+        s = carry_around_add(s, w)
+    return ~s & 0xffff

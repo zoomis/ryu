@@ -14,5 +14,25 @@
 # limitations under the License.
 
 
-version_info = (1, 3)
-version = '.'.join(map(str, version_info))
+class PacketBase(object):
+    _TYPES = {}
+
+    @classmethod
+    def get_packet_type(cls, type_):
+        return cls._TYPES.get(type_)
+
+    @classmethod
+    def register_packet_type(cls, cls_, type_):
+        cls._TYPES[type_] = cls_
+
+    def __init__(self):
+        super(PacketBase, self).__init__()
+        self.length = 0
+        self.protocol_name = self.__class__.__name__
+
+    @classmethod
+    def parser(cls):
+        pass
+
+    def serialize(self):
+        pass

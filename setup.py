@@ -37,7 +37,12 @@ classifiers = [
     'Natural Language :: English',
     'Programming Language :: Python',
     'Operating System :: Unix',
-    ]
+]
+
+if sys.platform == 'win32':
+    data_files = [('etc/ryu', ['etc/ryu/ryu.conf'])]
+else:
+    data_files = [('/etc/ryu', ['etc/ryu/ryu.conf'])]
 
 setup(name='ryu',
       version=version,
@@ -52,6 +57,5 @@ setup(name='ryu',
       packages=find_packages(),
       scripts=['bin/ryu-manager',
                'bin/ryu-client'],
-      data_files=[('/etc/ryu', ['etc/ryu/ryu.conf'])],
-#      install_requires=[]
+      data_files=data_files,
       )
