@@ -33,6 +33,12 @@ class FlowVisor_CLI(object):
         out, err = p.communicate()
         return out
 
+    def listFlowSpace(self):
+        cmdLine = "listFlowSpace"
+        p = Popen(self.cmdPrefix + cmdLine, shell=True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
+        out, err = p.communicate()
+        return out
+
     def createSlice(self, sliceName, ip, port):
         # Use a garbage email address...
         cmdLine = "createSlice " + sliceName + " tcp:" + ip + ":" + port + " blek@blek.ca"

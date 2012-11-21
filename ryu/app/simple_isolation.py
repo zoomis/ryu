@@ -43,7 +43,8 @@ class SimpleIsolation(app_manager.RyuApp):
         'network': network.Network,
         'dpset': dpset.DPSet,
         'fv_cli': flowvisor_cli.FlowVisor_CLI,
-        'mac2port': mac_to_port.MacToPortTable
+        'mac2port': mac_to_port.MacToPortTable,
+        'mac2net': mac_to_network.MacToNetwork
     }
 
     def __init__(self, *args, **kwargs):
@@ -51,8 +52,7 @@ class SimpleIsolation(app_manager.RyuApp):
         self.nw = kwargs['network']
         self.dpset = kwargs['dpset']
         self.mac2port = kwargs['mac2port']
-        self.mac2net = mac_to_network.MacToNetwork(self.nw)
-        self.nw.mac2net = self.mac2net # Give Network access to mac2net object
+        self.mac2net = kwargs['mac2net']
         self.fv_cli = kwargs['fv_cli']
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)

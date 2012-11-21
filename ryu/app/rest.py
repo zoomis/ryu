@@ -22,6 +22,7 @@ from ryu.controller import network
 from ryu.controller import flowvisor_cli
 from ryu.controller import dpset
 from ryu.controller import mac_to_port
+from ryu.controller import mac_to_network
 from ryu.exception import NetworkNotFound, NetworkAlreadyExist
 from ryu.exception import PortNotFound, PortAlreadyExist, PortUnknown
 from ryu.app.wsgi import ControllerBase, WSGIApplication
@@ -72,7 +73,8 @@ from ryu.app.rest_nw_id import NW_ID_EXTERNAL
 class NetworkController(ControllerBase):
     def __init__(self, req, link, data, **config):
         super(NetworkController, self).__init__(req, link, data, **config)
-        self.nw = data
+        self.nw = data['nw']
+        self.mac2net = data['mac2net']
 
     def create(self, req, network_id, **_kwargs):
         try:
@@ -92,12 +94,8 @@ class NetworkController(ControllerBase):
 
     def list_macs(self, req, network_id, **_kwargs):
         mac_list = []
-        for macAddr in self.nw.list_macs(network_id):
-            macStr = ""
-            for byte in map(ord, macAddr): #Converts byte-wise mac addr to proper string
-                macStr += "%X" % byte + "-"
-            
-            mac_list.append(macStr[:-1])
+        for macAddr in self.mac2net.list_macs(network_id):
+            mac_list.append(haddr_to_str(macAddr))
             
         body = json.dumps(mac_list)
         return Response(content_type='application/json', body=body)
@@ -240,6 +238,16 @@ class FlowVisorController(ControllerBase):
 
         return Response(status=status, content_type='application/json', body=body)
 
+    def listFlowSpace(self, req, **_kwargs):
+        body = self.fv_cli.listFlowSpace()
+        # Should always be a rule 0 (default rule) installed
+        if (body.find("rule 0") != -1):
+            status = 200
+        else:
+            status = 500
+
+        return Response(status=status, content_type='application/json', body=body)
+
     def createSlice(self, req, sliceName, ip, port):
         body = self.fv_cli.createSlice(sliceName, ip, port)
         if (body.find("success") != -1):
@@ -374,7 +382,8 @@ class restapi(app_manager.RyuApp):
         'wsgi': WSGIApplication,
         'fv_cli': flowvisor_cli.FlowVisor_CLI,
         'dpset': dpset.DPSet,
-        'mac2port': mac_to_port.MacToPortTable
+        'mac2port': mac_to_port.MacToPortTable,
+        'mac2net': mac_to_network.MacToNetwork
     }
 
     def __init__(self, *args, **kwargs):
@@ -384,10 +393,12 @@ class restapi(app_manager.RyuApp):
         wsgi = kwargs['wsgi']
         self.dpset = kwargs['dpset']
         self.mac2port = kwargs['mac2port']
+        self.mac2net = kwargs['mac2net']
         mapper = wsgi.mapper
 
         # Change packet handler
-        wsgi.registory['NetworkController'] = self.nw
+        wsgi.registory['NetworkController'] = { 'nw' : self.nw,
+                                                'mac2net' : self.mac2net }
         mapper.connect('networks', '/v1.0/packethandler/{handler_id}',
                        controller=NetworkController, action='setPacketHandler',
                        conditions=dict(method=['PUT']))
@@ -462,6 +473,10 @@ class restapi(app_manager.RyuApp):
         uri = '/v1.0/flowvisor'
         mapper.connect('flowvisor', uri,
                        controller=FlowVisorController, action='listSlices',
+                       conditions=dict(method=['GET']))
+
+        mapper.connect('flowvisor', uri + '/flowspace',
+                       controller=FlowVisorController, action='listFlowSpace',
                        conditions=dict(method=['GET']))
 
         mapper.connect('flowvisor', uri + '/{sliceName}',
