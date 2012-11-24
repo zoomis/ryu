@@ -30,6 +30,7 @@ from ryu.controller import mac_to_network
 from ryu.controller import mac_to_port
 from ryu.controller import network
 from ryu.controller import ofp_event
+from ryu.controller import flowvisor_cli
 from ryu.controller.handler import MAIN_DISPATCHER
 from ryu.controller.handler import CONFIG_DISPATCHER
 from ryu.controller.handler import set_ev_cls
@@ -45,7 +46,9 @@ class SimpleIsolation(app_manager.RyuApp):
     _CONTEXTS = {
         'network': network.Network,
         'dpset': dpset.DPSet,
-        'mac2port': mac_to_port.MacToPortTable
+        'fv_cli': flowvisor_cli.FlowVisor_CLI,
+        'mac2port': mac_to_port.MacToPortTable,
+        'mac2net': mac_to_network.MacToNetwork
     }
 
     def __init__(self, *args, **kwargs):
@@ -53,8 +56,9 @@ class SimpleIsolation(app_manager.RyuApp):
         self.nw = kwargs['network']
         self.dpset = kwargs['dpset']
         self.mac2port = kwargs['mac2port']
-        self.mac2net = mac_to_network.MacToNetwork(self.nw)
-        self.nw.mac2net = self.mac2net # Give Network access to mac2net object
+        self.mac2net = kwargs['mac2net']
+        self.fv_cli = kwargs['fv_cli']
+
         self._init_pxe_vlans() # Initialize PXE network
         self._init_manage_vlans() # Initialize nova-manage VLANs
 
@@ -212,6 +216,54 @@ class SimpleIsolation(app_manager.RyuApp):
 
         src_nw_id = self.mac2net.get_network(src, NW_ID_UNKNOWN)
         dst_nw_id = self.mac2net.get_network(dst, NW_ID_UNKNOWN)
+
+        # If (input port belongs to a delegated network):
+        #    Add FlowSpace for (dpid, port, src_mac)
+        #    Drop current packet
+        # Else if ((port is an external) AND (src_mac belongs to a delegated network)):
+        #    Add FlowSpace for (dpid, port, src_mac)
+        #    Drop current packet
+        port_sliceName = self.fv_cli.getSliceName(port_nw_id)
+        src_sliceName = self.fv_cli.getSliceName(src_nw_id)
+        if port_sliceName or \
+           ((port_nw_id == NW_ID_EXTERNAL) and src_sliceName):
+            sliceName = port_sliceName or src_sliceName
+
+            # Add FV rules if the target slice is not the default slice and if
+            #    there currently exists no rules matching (dpid, port, mac).
+            #    The second condition avoids installing duplicate rules if subsequent
+            #    packets are queued in Ryu before rule installation triggered
+            #    from first packet is completed
+            if (sliceName != self.fv_cli.defaultSlice) and \
+               (len(self.fv_cli.getFlowSpaceIDs(datapath.id, msg.in_port, src)) == 0):
+                # ORDER OF INSTALLING RULES IS IMPORTANT! Install rules for other switches
+                #   before installing rules for source switch. This avoids subsequent
+                #   packets from reaching non-source switches before rules can be properly
+                #   installed on them, which will trigger duplicate rules to be isntalled.
+                # Need to install mac for all EXTERNAL ports throughout network
+                for (dpid, port) in self.nw.list_ports(NW_ID_EXTERNAL):
+                    if (dpid == datapath.id):
+                        continue
+
+                    ret = self.fv_cli.addFlowSpace(sliceName, dpid, port, haddr_to_str(src))
+                    if (ret.find("success") == -1):
+                        # Error, how to handle?
+                        LOG.debug("Error while installing FlowSpace for slice %s: (%s, %s, %s)",\
+                                    sliceName, dpid, str(port), haddr_to_str(src))
+                    else:
+                        self.fv_cli.addFlowSpaceID(dpid, port, src, int(ret[9:]))
+
+                # Now install rule on source switch
+                ret = self.fv_cli.addFlowSpace(sliceName, datapath.id, msg.in_port, haddr_to_str(src))
+                if (ret.find("success") == -1):
+                    # Error, how to handle?
+                    LOG.debug("Error while installing FlowSpace for slice %s: (%s, %s, %s)",\
+                                sliceName, dpid, str(port), haddr_to_str(src))
+                else:
+                    self.fv_cli.addFlowSpaceID(datapath.id, msg.in_port, src, int(ret[9:]))
+
+            self._drop_packet(msg)
+            return
 
         # we handle multicast packet as same as broadcast
         broadcast = (dst == mac.BROADCAST) or mac.is_multicast(dst)
