@@ -75,17 +75,6 @@ class Network(object):
         except KeyError:
             raise NetworkNotFound(network_id=network_id)
 
-    # Return list of macs associated with network ID
-    def list_macs(self, network_id):
-        try:
-            # use list() to keep compatibility for output
-            # set() isn't json serializable
-            assert self.mac2net != None
-            return list(self.mac2net.list_macs(network_id))
-        except KeyError:
-            raise NetworkNotFound(network_id=network_id)
-
-
     def _update_port(self, network_id, dpid, port, port_may_exist):
         def _known_nw_id(nw_id):
             return nw_id is not None and nw_id != self.nw_id_unknown

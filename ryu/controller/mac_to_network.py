@@ -23,11 +23,10 @@ LOG = logging.getLogger('ryu.controller.mac_to_network')
 
 
 class MacToNetwork(object):
-    def __init__(self, nw):
+    def __init__(self):
         super(MacToNetwork, self).__init__()
         self.mac_to_net = {}
         self.dpid = {}
-        self.nw = nw
 
     def get_network(self, mac, default=None):
         return self.mac_to_net.get(mac, default)
