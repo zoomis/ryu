@@ -99,7 +99,11 @@ class Network(object):
         self.dpids[dpid][port] = network_id
 
     def create_port(self, network_id, dpid, port):
-        self._update_port(network_id, dpid, port, False)
+        if NW_ID_EXTERNAL != self.dpids.get(dpid, {}).get(port, None):
+            self._update_port(network_id, dpid, port, False)
+        else:
+            # If a port has been registered as external, leave it be
+            pass
 
     def update_port(self, network_id, dpid, port):
         self._update_port(network_id, dpid, port, True)
@@ -180,14 +184,6 @@ class Network(object):
 
         return ret
 
-    def add_mac(self, net_id, mac):
-        assert self.mac2net is not None
-        
-        # Must convert MAC address into ASCII char types
-        charMAC = haddr_to_bin(mac)
-        
-        self.mac2net.add_mac(charMAC, net_id, NW_ID_EXTERNAL)
-
     def add_iface(self, net_id, iface_id):
         return # Feature not completed
         assert self.mac2net is not None
@@ -199,14 +195,6 @@ class Network(object):
         
         self.mac2net.add_mac(charMAC, net_id, NW_ID_EXTERNAL)
     
-    def del_mac(self, mac):
-        assert self.mac2net is not None
-
-        # Must convert MAC address into ASCII char types
-        charMAC = haddr_to_bin(mac)
-        
-        self.mac2net.del_mac(charMAC)
-
     def del_iface(self, iface_id):
         return # Feature not completed
         assert self.mac2net is not None

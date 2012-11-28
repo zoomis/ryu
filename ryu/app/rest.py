@@ -27,7 +27,7 @@ from ryu.exception import NetworkNotFound, NetworkAlreadyExist
 from ryu.exception import PortNotFound, PortAlreadyExist, PortUnknown
 from ryu.app.wsgi import ControllerBase, WSGIApplication
 from ryu.exception import MacAddressDuplicated
-from ryu.lib.mac import is_multicast, haddr_to_str
+from ryu.lib.mac import is_multicast, haddr_to_str, haddr_to_bin
 from ryu.app.rest_nw_id import NW_ID_EXTERNAL
 
 ## TODO:XXX
@@ -76,6 +76,9 @@ class NetworkController(ControllerBase):
         self.nw = data['nw']
         self.mac2net = data['mac2net']
 
+        assert self.nw is not None
+        assert self.mac2net is not None
+
     def create(self, req, network_id, **_kwargs):
         try:
             self.nw.create_network(network_id)
@@ -102,7 +105,10 @@ class NetworkController(ControllerBase):
 
     def add_mac(self, req, network_id, mac, **_kwargs):
         try:
-            self.nw.add_mac(network_id, mac)
+            # Must convert MAC address into ASCII char types
+            charMAC = haddr_to_bin(mac)
+
+            self.mac2net.add_mac(charMAC, network_id, NW_ID_EXTERNAL)
         except MacAddressDuplicated:
             return Response(status=409)
         else:
@@ -120,7 +126,10 @@ class NetworkController(ControllerBase):
         try:
             # 'network_id' not actually required
             # Kept to keep uri format similar to add_mac
-            self.nw.del_mac(mac)
+            # Must convert MAC address into ASCII char types
+            charMAC = haddr_to_bin(mac)
+
+            self.mac2net.del_mac(charMAC)
         except:
             return Response(status=500)
         else:

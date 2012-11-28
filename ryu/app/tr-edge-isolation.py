@@ -69,10 +69,12 @@ class SimpleIsolation(app_manager.RyuApp):
         #   1. tr-edge-1 eth2 pxe <=> atom eth0 pxe
         #   2. tr-edge-1 eth2 pxe <=> asus eth0 pxe
         #   3. tr-edge-1 eth2 pxe <=> vol eth0 pxe
-        self.pxe_port2vlans[10] = [1, 2, 3]
+        #   4. tr-edge-1 eth2 pxe <=> cluster eth0 1/4 pxe
+        self.pxe_port2vlans[10] = [1, 2, 3, 4]
         self.pxe_port2vlans[6] = [1]
         self.pxe_port2vlans[8] = [2]
         self.pxe_port2vlans[4] = [3]
+        self.pxe_port2vlans[30] = [4]
 
     def _init_manage_vlans(self):
         self.manage_port2vlans = {}
@@ -80,9 +82,13 @@ class SimpleIsolation(app_manager.RyuApp):
         # VLANs:
         #   20. tr-edge-1 eth5 manage <=> Vol eth1 manage
         #   21. tr-edge-1 eth5 manage <=> Obj eth0 manage
-        self.manage_port2vlans[26] = [20, 21]
+        #   22. tr-edge-1 eth5 manage <=> Asus2 eth0 manage
+        #   23. tr-edge-1 eth5 manage <=> Asus3 eth0 manage
+        self.manage_port2vlans[26] = [20, 21, 22, 23]
         self.manage_port2vlans[14] = [20]
         self.manage_port2vlans[24] = [21]
+        self.manage_port2vlans[3] = [22]
+        self.manage_port2vlans[7] = [23]
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
