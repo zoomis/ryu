@@ -62,3 +62,7 @@ class PortUnknown(RyuException):
 
 class MacAddressDuplicated(RyuException):
     message = 'MAC address %(mac)s is duplicated'
+
+
+class MacAddressNotFound(RyuException):
+    message = 'No such MAC address %(mac)s found'
