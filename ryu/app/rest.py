@@ -538,7 +538,7 @@ class restapi(app_manager.RyuApp):
             self.nw.create_network(network_id)
 
         for (network_id, dpid, port_num) in ports:
-            self.nw.create_port(network_id, dpid, port_num)
+            self.nw.create_port(network_id, int(dpid, 16), int(port_num))
 
         for (network_id, mac_address) in macs:
-            self.mac2net.add_mac(haddr_to_bin(mac_address), network_id)
+            self.mac2net.add_mac(haddr_to_bin(mac_address), network_id, NW_ID_EXTERNAL)

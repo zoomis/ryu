@@ -41,7 +41,7 @@ class API_DB(object):
         self.db_macs = self.db.macs
 
     ###########################################################################
-    # Retrieve database contents
+    # Functions for retrieving database contents
     ###########################################################################
     def getNetworks(self):
         net_list = []
@@ -65,7 +65,7 @@ class API_DB(object):
         return mac_list
 
     ###########################################################################
-    # Store API calls into database
+    # Functions for storing API calls into the database
     ###########################################################################
     def createNetwork(self, network_id, update=False):
         if not self.db_nets.get(network_id):
