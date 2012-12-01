@@ -21,7 +21,7 @@ import logging
 import struct
 
 from ryu.app.rest_nw_id import NW_ID_UNKNOWN, NW_ID_EXTERNAL
-from ryu.app.rest_nw_id import NW_ID_PXE, NW_ID_MGMT
+from ryu.app.rest_nw_id import NW_ID_PXE_CTRL, NW_ID_PXE, NW_ID_MGMT_CTRL, NW_ID_MGMT
 from ryu.base import app_manager
 from ryu.exception import MacAddressDuplicated
 from ryu.exception import PortUnknown
@@ -58,37 +58,6 @@ class SimpleIsolation(app_manager.RyuApp):
         self.mac2port = kwargs['mac2port']
         self.mac2net = kwargs['mac2net']
         self.fv_cli = kwargs['fv_cli']
-
-        self._init_pxe_vlans() # Initialize PXE network
-        self._init_manage_vlans() # Initialize nova-manage VLANs
-
-    def _init_pxe_vlans(self):
-        self.pxe_port2vlans = {}
-
-        # VLANs:
-        #   1. tr-edge-1 eth2 pxe <=> atom eth0 pxe
-        #   2. tr-edge-1 eth2 pxe <=> asus eth0 pxe
-        #   3. tr-edge-1 eth2 pxe <=> vol eth0 pxe
-        #   4. tr-edge-1 eth2 pxe <=> cluster eth0 1/4 pxe
-        self.pxe_port2vlans[10] = [1, 2, 3, 4]
-        self.pxe_port2vlans[6] = [1]
-        self.pxe_port2vlans[8] = [2]
-        self.pxe_port2vlans[4] = [3]
-        self.pxe_port2vlans[30] = [4]
-
-    def _init_manage_vlans(self):
-        self.manage_port2vlans = {}
-
-        # VLANs:
-        #   20. tr-edge-1 eth5 manage <=> Vol eth1 manage
-        #   21. tr-edge-1 eth5 manage <=> Obj eth0 manage
-        #   22. tr-edge-1 eth5 manage <=> Asus2 eth0 manage
-        #   23. tr-edge-1 eth5 manage <=> Asus3 eth0 manage
-        self.manage_port2vlans[26] = [20, 21, 22, 23]
-        self.manage_port2vlans[14] = [20]
-        self.manage_port2vlans[24] = [21]
-        self.manage_port2vlans[3] = [22]
-        self.manage_port2vlans[7] = [23]
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -275,10 +244,10 @@ class SimpleIsolation(app_manager.RyuApp):
         broadcast = (dst == mac.BROADCAST) or mac.is_multicast(dst)
         out_port = self.mac2port.port_get(datapath.id, dst)
 
-        if port_nw_id == NW_ID_PXE:
+        if src_nw_id == NW_ID_PXE or src_nw_id == NW_ID_PXE_CTRL:
             self.pktHandling_PXE(msg, datapath, ofproto, dst, src, broadcast,
                                     port_nw_id, src_nw_id, dst_nw_id, out_port)
-        elif port_nw_id == NW_ID_MGMT:
+        elif src_nw_id == NW_ID_MGMT or src_nw_id == NW_ID_MGMT_CTRL:
             self.pktHandling_MGMT(msg, datapath, ofproto, dst, src, broadcast,
                                     port_nw_id, src_nw_id, dst_nw_id, out_port)
         else:
@@ -369,17 +338,6 @@ class SimpleIsolation(app_manager.RyuApp):
         else:
             assert reason == ofproto.OFPPR_MODIFY
 
-    def ports_in_same_vlan(self, vlan_dict, port1, port2):
-        vlans1 = vlan_dict.get(port1, None)
-        vlans2 = vlan_dict.get(port2, None)
-
-        if vlans1 is not None and vlans2 is not None:
-            for vlan in vlans1:
-                if vlan in vlans2:
-                    return True
-
-        return False
-
     # ===========================================================
     # Packet handling logic functions
     # ===========================================================
@@ -469,16 +427,17 @@ class SimpleIsolation(app_manager.RyuApp):
     def pktHandling_PXE(self, msg, datapath, ofproto, dst, src, broadcast,
                                 port_nw_id, src_nw_id, dst_nw_id, out_port):
         # Isolate between controller and each BM servers
-        # Currently uses port-based approach on single OF switch
-        #   In future maybe use MAC based approach?
-        #   More flexible (allows links to switch ports and covers case of multiple OF switches)
-
         actions = []
         if broadcast or out_port is None:
             out_port_list = []
-            for port in self.pxe_port2vlans.keys():
-                if port is not msg.in_port and self.ports_in_same_vlan(self.pxe_port2vlans, msg.in_port, port):
+            for dpid, port in self.nw.list_ports(NW_ID_PXE_CTRL):
+                if port is not msg.in_port:
                     out_port_list.append(port)
+
+            if src_nw_id == NW_ID_PXE_CTRL:
+                for dpid, port in self.nw.list_ports(NW_ID_PXE):
+                    if port is not msg.in_port:
+                        out_port_list.append(port)
 
             for port in out_port_list:
                 actions.append(datapath.ofproto_parser.OFPActionOutput(port))
@@ -490,8 +449,8 @@ class SimpleIsolation(app_manager.RyuApp):
                 # Simply flooding; Don't bother with mod flow
                 datapath.send_packet_out(msg.buffer_id, msg.in_port, actions)
         else:
-            # Check if output port is in same VLAN as input port
-            if self.ports_in_same_vlan(self.pxe_port2vlans, msg.in_port, out_port):
+            # Check if output port is allowed (if source is PXE_CTRL network, don't care)
+            if src_nw_id == NW_ID_PXE_CTRL or src_nw_id != dst_nw_id:
                 actions.append(datapath.ofproto_parser.OFPActionOutput(out_port))
 
             # Installs rule to drop if actions list is empty
@@ -499,16 +458,17 @@ class SimpleIsolation(app_manager.RyuApp):
 
     def pktHandling_MGMT(self, msg, datapath, ofproto, dst, src, broadcast,
                                 port_nw_id, src_nw_id, dst_nw_id, out_port):
-        # Currently uses port-based approach on single OF switch
-        #   In future maybe use MAC based approach?
-        #   More flexible (allows links to switch ports and covers case of multiple OF switches)
-
         actions = []
         if broadcast or out_port is None:
             out_port_list = []
-            for port in self.manage_port2vlans.keys():
-                if port is not msg.in_port and self.ports_in_same_vlan(self.manage_port2vlans, msg.in_port, port):
+            for dpid, port in self.nw.list_ports(NW_ID_MGMT_CTRL):
+                if port is not msg.in_port:
                     out_port_list.append(port)
+
+            if src_nw_id == NW_ID_MGMT_CTRL:
+                for dpid, port in self.nw.list_ports(NW_ID_MGMT):
+                    if port is not msg.in_port:
+                        out_port_list.append(port)
 
             for port in out_port_list:
                 actions.append(datapath.ofproto_parser.OFPActionOutput(port))
@@ -520,8 +480,8 @@ class SimpleIsolation(app_manager.RyuApp):
                 # Simply flooding; Don't bother with mod flow
                 datapath.send_packet_out(msg.buffer_id, msg.in_port, actions)
         else:
-            # Check if output port is in same VLAN as input port
-            if self.ports_in_same_vlan(self.manage_port2vlans, msg.in_port, out_port):
+            # Check if output port is allowed (if source is MGMT_CTRL network, don't care)
+            if src_nw_id == NW_ID_MGMT_CTRL or src_nw_id != dst_nw_id:
                 actions.append(datapath.ofproto_parser.OFPActionOutput(out_port))
 
             # Installs rule to drop if actions list is empty
