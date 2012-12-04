@@ -23,7 +23,7 @@ import struct
 from ryu.app.rest_nw_id import NW_ID_UNKNOWN, NW_ID_EXTERNAL
 from ryu.app.rest_nw_id import NW_ID_PXE_CTRL, NW_ID_PXE, NW_ID_MGMT_CTRL, NW_ID_MGMT
 from ryu.base import app_manager
-from ryu.exception import MacAddressDuplicated
+from ryu.exception import MacAddressDuplicated, MacAddressNotFound
 from ryu.exception import PortUnknown
 from ryu.controller import dpset
 from ryu.controller import mac_to_network
@@ -318,7 +318,12 @@ class SimpleIsolation(app_manager.RyuApp):
 
                 self.mac2port.mac_del(dp.id, mac_)
 
-            self.mac2net.del_mac(mac_)
+            try:
+                self.mac2net.del_mac(mac_)
+            except MacAddressNotFound:
+                # Race condition between del_mac REST API and OF port_del ofp_event
+                # Other possibility is that Ryu has been restarted after a crash
+                pass
 
         self.nw.port_deleted(datapath.id, port_no)
 
@@ -431,12 +436,12 @@ class SimpleIsolation(app_manager.RyuApp):
         if broadcast or out_port is None:
             out_port_list = []
             for dpid, port in self.nw.list_ports(NW_ID_PXE_CTRL):
-                if port is not msg.in_port:
+                if port is not msg.in_port and dpid is datapath.id:
                     out_port_list.append(port)
 
             if src_nw_id == NW_ID_PXE_CTRL:
                 for dpid, port in self.nw.list_ports(NW_ID_PXE):
-                    if port is not msg.in_port:
+                    if port is not msg.in_port and dpid is datapath.id:
                         out_port_list.append(port)
 
             for port in out_port_list:
@@ -462,12 +467,12 @@ class SimpleIsolation(app_manager.RyuApp):
         if broadcast or out_port is None:
             out_port_list = []
             for dpid, port in self.nw.list_ports(NW_ID_MGMT_CTRL):
-                if port is not msg.in_port:
+                if port is not msg.in_port and dpid is datapath.id:
                     out_port_list.append(port)
 
             if src_nw_id == NW_ID_MGMT_CTRL:
                 for dpid, port in self.nw.list_ports(NW_ID_MGMT):
-                    if port is not msg.in_port:
+                    if port is not msg.in_port and dpid is datapath.id:
                         out_port_list.append(port)
 
             for port in out_port_list:
