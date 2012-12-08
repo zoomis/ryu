@@ -66,3 +66,18 @@ class MacAddressDuplicated(RyuException):
 
 class MacAddressNotFound(RyuException):
     message = 'No such MAC address %(mac)s found'
+
+
+class BondAlreadyExist(RyuException):
+    message = 'Bond id %(bond_id)s already exists'
+
+
+class BondNetworkMismatch(RyuException):
+    message = "Port's network id does not match network id for bond %(bond_id)s"
+
+
+class BondPortNotFound(RyuException):
+    message = 'No such port (%(dpid)s, %(port)s) in bond %(bond_id)s'
+
+
+

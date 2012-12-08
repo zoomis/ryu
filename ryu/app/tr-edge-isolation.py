@@ -31,6 +31,7 @@ from ryu.controller import mac_to_port
 from ryu.controller import network
 from ryu.controller import ofp_event
 from ryu.controller import flowvisor_cli
+from ryu.controller import port_bond
 from ryu.controller.handler import MAIN_DISPATCHER
 from ryu.controller.handler import CONFIG_DISPATCHER
 from ryu.controller.handler import set_ev_cls
@@ -48,7 +49,8 @@ class SimpleIsolation(app_manager.RyuApp):
         'dpset': dpset.DPSet,
         'fv_cli': flowvisor_cli.FlowVisor_CLI,
         'mac2port': mac_to_port.MacToPortTable,
-        'mac2net': mac_to_network.MacToNetwork
+        'mac2net': mac_to_network.MacToNetwork,
+        'port_bond': port_bond.PortBond
     }
 
     def __init__(self, *args, **kwargs):
@@ -58,6 +60,7 @@ class SimpleIsolation(app_manager.RyuApp):
         self.mac2port = kwargs['mac2port']
         self.mac2net = kwargs['mac2net']
         self.fv_cli = kwargs['fv_cli']
+        self.port_bond = kwargs['port_bond']
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -70,14 +73,11 @@ class SimpleIsolation(app_manager.RyuApp):
         self.mac2port.dpid_add(ev.msg.datapath_id)
         self.nw.add_datapath(ev.msg)
 
-    @staticmethod
-    def _modflow_and_send_packet(msg, src, dst, actions):
+    def _install_modflow(self, msg, src, dst, actions):
         datapath = msg.datapath
         ofproto = datapath.ofproto
 
-        #
-        # install flow and then send packet
-        #
+        # install flow
         rule = nx_match.ClsRule()
         rule.set_in_port(msg.in_port)
         rule.set_dl_dst(dst)
@@ -89,9 +89,40 @@ class SimpleIsolation(app_manager.RyuApp):
             buffer_id=0xffffffff, out_port=ofproto.OFPP_NONE,
             flags=ofproto.OFPFF_SEND_FLOW_REM, actions=actions)
 
-        datapath.send_packet_out(msg.buffer_id, msg.in_port, actions)
+    # Creates the appropriate action lists and installs the flows
+    # Returns the list of action(s) it installed
+    def _install_unicast_flow(self, msg, src, dst, out_port):
+        orig_in_port = msg.in_port
+        datapath = msg.datapath
+
+        in_bond_id = self.port_bond.get_bond_id(datapath.id, msg.in_port)
+        out_bond_id = self.port_bond.get_bond_id(datapath.id, out_port)
+        if in_bond_id == out_bond_id and (in_bond_id or out_bond_id):
+            self._modflow_and_drop_packet(msg, src, dst)
+            return
+
+        if in_bond_id:
+            # Install flow for each input port in bond
+            for dpid, port in self.port_bond.ports_in_bond(in_bond_id):
+                if out_bond_id:
+                    # Choose output port based on round-robin
+                    out_port = self.port_bond.get_out_port(out_bond_id)
+
+                msg.in_port = port
+                actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
+                self._install_modflow(msg, src, dst, actions)
+        else:
+            if out_bond_id:
+                out_port = self.port_bond.get_out_port(out_bond_id)
+            actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
+            self._install_modflow(msg, src, dst, actions)
+
+        # In case of multiple outputs, replace msg.in_port with original
+        msg.in_port = orig_in_port
+        return actions
 
     def _forward_to_nw_id(self, msg, src, dst, nw_id, out_port):
+        print "send to port %s" % out_port
         assert out_port is not None
         datapath = msg.datapath
 
@@ -103,24 +134,65 @@ class SimpleIsolation(app_manager.RyuApp):
                       msg.in_port, out_port, datapath.id)
             return
 
+        # Install unicast flows and retrieve resulting actions list
+        actions = self._install_unicast_flow(msg, src, dst, out_port)
         LOG.debug("learned dpid %s in_port %d out_port %d src %s dst %s",
-                  datapath.id, msg.in_port, out_port,
+                  datapath.id, msg.in_port, actions[0].port,
                   haddr_to_str(src), haddr_to_str(dst))
-        actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
-        self._modflow_and_send_packet(msg, src, dst, actions)
+
+        datapath.send_packet_out(msg.buffer_id, msg.in_port, actions)
+        print "actually sent out to port %s" % actions[0].port
+
+    # Given an input port, datapath ID, and network ID, return
+    #   a list of valid output ports
+    def _get_all_out_ports(self, dpid, in_port, nw_id, allow_other_nw_id=None):
+        in_bond_id = self.port_bond.get_bond_id(dpid, in_port)
+        # Retrieve all output ports regardless of bond
+        out_port_list = set(self.nw.filter_ports(dpid, in_port, nw_id, allow_other_nw_id))
+
+        # Remove all ports that belong in a bond
+        bond_list = self.port_bond.list_bonds(dpid, nw_id)
+        if allow_other_nw_id:
+            bond_list.extend(self.port_bond.list_bonds(dpid, allow_other_nw_id))
+
+        for bond_id in bond_list:
+            bond_ports = set([port for dpid, port in self.port_bond.ports_in_bond(bond_id)])
+            out_port_list -= bond_ports
+
+            # Re-add one port for each bond (Except source bond, if source port is bonded)
+            if in_bond_id != bond_id:
+                out_port_list.add(self.port_bond.get_out_port(bond_id))
+
+        return list(out_port_list)
 
     def _flood_to_nw_id(self, msg, src, dst, nw_id):
+        print "flood to nw id %s" % nw_id
         datapath = msg.datapath
+        in_port = msg.in_port
         actions = []
         LOG.debug("dpid %s in_port %d src %s dst %s ports %s",
                   datapath.id, msg.in_port,
                   haddr_to_str(src), haddr_to_str(dst),
                   self.nw.dpids.get(datapath.id, {}).items())
-        for port_no in self.nw.filter_ports(datapath.id, msg.in_port,
-                                            nw_id, NW_ID_EXTERNAL):
+
+        out_port_list = self._get_all_out_ports(datapath.id, msg.in_port,
+                                                    nw_id, NW_ID_EXTERNAL)
+
+        for port_no in out_port_list:
             LOG.debug("port_no %s", port_no)
             actions.append(datapath.ofproto_parser.OFPActionOutput(port_no))
-        self._modflow_and_send_packet(msg, src, dst, actions)
+
+        in_bond_id = self.port_bond.get_bond_id(datapath.id, msg.in_port)
+        if in_bond_id:
+            # Install a flow for each port in bond
+            for dpid, port in self.port_bond.ports_in_bond(in_bond_id):
+                msg.in_port = port
+                self._install_modflow(msg, src, dst, actions)
+        else:
+            self._install_modflow(msg, src, dst, actions)
+
+        datapath.send_packet_out(msg.buffer_id, in_port, actions)
+        print "actually sent out to these ports: %s" % out_port_list
 
     def _learned_mac_or_flood_to_nw_id(self, msg, src, dst,
                                        dst_nw_id, out_port):
@@ -130,7 +202,19 @@ class SimpleIsolation(app_manager.RyuApp):
             self._flood_to_nw_id(msg, src, dst, dst_nw_id)
 
     def _modflow_and_drop_packet(self, msg, src, dst):
-        self._modflow_and_send_packet(msg, src, dst, [])
+        print "installing flow for dropping packet"
+        datapath = msg.datapath
+        in_port = msg.in_port
+
+        bond_id = self.port_bond.get_bond_id(datapath.id, msg.in_port)
+        if bond_id:
+            for dpid, port in self.port_bond.ports_in_bond(bond_id):
+                msg.in_port = port
+                self._install_modflow(msg, src, dst, [])
+        else:
+            self._install_modflow(msg, src, dst, [])
+
+        datapath.send_packet_out(msg.buffer_id, in_port, [])
 
     def _drop_packet(self, msg):
         datapath = msg.datapath
@@ -144,6 +228,7 @@ class SimpleIsolation(app_manager.RyuApp):
         msg = ev.msg
         datapath = msg.datapath
         ofproto = datapath.ofproto
+        print "packet in from port %s of dpid %s" % (msg.in_port, datapath.id)
 
         dst, src, _eth_type = struct.unpack_from('!6s6sH', buffer(msg.data), 0)
 
@@ -253,7 +338,7 @@ class SimpleIsolation(app_manager.RyuApp):
         else:
             self.pktHandling_BaseCase(msg, datapath, ofproto, dst, src, broadcast,
                                         port_nw_id, src_nw_id, dst_nw_id, out_port)
-
+        print "\n"
 
     def _port_add(self, ev):
         #
@@ -427,48 +512,52 @@ class SimpleIsolation(app_manager.RyuApp):
     def pktHandling_PXE(self, msg, datapath, ofproto, dst, src, broadcast,
                                 port_nw_id, src_nw_id, dst_nw_id, out_port):
         # Isolate between controller and each BM servers
+        in_port = msg.in_port
+        in_bond_id = self.port_bond.get_bond_id(datapath.id, msg.in_port)
+        out_bond_id = self.port_bond.get_bond_id(datapath.id, out_port)
+        if in_bond_id:
+            in_bond_ports = [port for dpid, port in self.port_bond.ports_in_bond(in_bond_id)]
+
         actions = []
         if broadcast or out_port is None:
-            out_port_list = []
-            for dpid, port in self.nw.list_ports(NW_ID_PXE_CTRL):
-                if port is not msg.in_port:
-                    out_port_list.append(port)
+            out_port_list = self._get_all_out_ports(datapath.id, in_port, NW_ID_PXE_CTRL)
 
             if src_nw_id == NW_ID_PXE_CTRL:
-                for dpid, port in self.nw.list_ports(NW_ID_PXE):
-                    if port is not msg.in_port:
-                        out_port_list.append(port)
+                out_port_list.extend(self._get_all_out_ports(datapath.id, in_port, NW_ID_PXE))
 
             for port in out_port_list:
                 actions.append(datapath.ofproto_parser.OFPActionOutput(port))
 
             if broadcast:
                 # If broadcasting, write mod flow into switch
-                self._modflow_and_send_packet(msg, src, dst, actions)
-            else:
-                # Simply flooding; Don't bother with mod flow
-                datapath.send_packet_out(msg.buffer_id, msg.in_port, actions)
+                if in_bond_id:
+                    for port in self.port_bond.get_ports_in_bond(in_bond_id):
+                        msg.in_port = port
+                        self._install_modflow(msg, src, dst, actions)
+                else:
+                    self._install_modflow(msg, src, dst, actions)
         else:
             # Check if output port is allowed (if source is PXE_CTRL network, don't care)
             if src_nw_id == NW_ID_PXE_CTRL or src_nw_id != dst_nw_id:
-                actions.append(datapath.ofproto_parser.OFPActionOutput(out_port))
+                # Install unicast flows and retrieve resulting actions list
+                actions = self._install_unicast_flow(msg, src, dst, out_port)
+            else:
+                # Installs rule to drop if actions list is empty
+                self._install_modflow(msg, src, dst, actions)
 
-            # Installs rule to drop if actions list is empty
-            self._modflow_and_send_packet(msg, src, dst, actions)
+        datapath.send_packet_out(msg.buffer_id, in_port, actions)
 
     def pktHandling_MGMT(self, msg, datapath, ofproto, dst, src, broadcast,
                                 port_nw_id, src_nw_id, dst_nw_id, out_port):
         actions = []
         if broadcast or out_port is None:
             out_port_list = []
-            for dpid, port in self.nw.list_ports(NW_ID_MGMT_CTRL):
-                if port is not msg.in_port:
-                    out_port_list.append(port)
+            out_port_list.extend(self.nw.filter_ports(datapath.id,
+                                        msg.in_port, NW_ID_MGMT_CTRL))
 
             if src_nw_id == NW_ID_MGMT_CTRL:
-                for dpid, port in self.nw.list_ports(NW_ID_MGMT):
-                    if port is not msg.in_port:
-                        out_port_list.append(port)
+                out_port_list.extend(self.nw.filter_ports(datapath.id,
+                                                msg.in_port, NW_ID_MGMT))
 
             for port in out_port_list:
                 actions.append(datapath.ofproto_parser.OFPActionOutput(port))

@@ -27,8 +27,10 @@ from ryu.controller import dpset
 from ryu.controller import mac_to_port
 from ryu.controller import mac_to_network
 from ryu.controller import api_db
+from ryu.controller import port_bond
 from ryu.exception import NetworkNotFound, NetworkAlreadyExist
 from ryu.exception import PortNotFound, PortAlreadyExist, PortUnknown
+from ryu.exception import BondAlreadyExist, BondNetworkMismatch, BondPortNotFound
 from ryu.app.wsgi import ControllerBase, WSGIApplication
 from ryu.exception import MacAddressDuplicated, MacAddressNotFound
 from ryu.lib.mac import is_multicast, haddr_to_str, haddr_to_bin
@@ -403,6 +405,59 @@ class FlowVisorController(ControllerBase):
         return Response(status=status, content_type='application/json', body=body)
 
 
+class PortBondController(ControllerBase):
+    def __init__(self, req, link, data, **config):
+        super(PortBondController, self).__init__(req, link, data, **config)
+        self.port_bond = data.get('port_bond')
+
+        assert self.port_bond is not None
+
+    def list_bonds(self, req):
+        body = json.dumps(self.port_bond.list_bonds())
+        return Response(status=200, content_type='application/json', body=body)
+
+    def create_bond(self, req, bond_id, network_id):
+        try:
+            self.port_bond.create_bond(bond_id, network_id)
+        except BondAlreadyExist:
+            body = "Bond ID already exists"
+            return Response(status=409, body=body)
+
+        return Response(status=200)
+
+    def delete_bond(self, req, bond_id):
+        self.port_bond.delete_bond(bond_id)
+
+        return Response(status=200)
+
+    def add_port(self, req, bond_id, dpid, port):
+        try:
+            self.port_bond.add_port(bond_id, int(dpid, 16), int(port))
+        except BondNetworkMismatch:
+            body = "Bond's network ID does not match port's network ID"
+            return Response(status=200, body=body)
+
+        return Response(status=200)
+
+    def del_port(self, req, bond_id, dpid, port):
+        try:
+            self.port_bond.del_port(bond_id, int(dpid, 16), int(port))
+        except BondPortNotFound:
+            body = "Port not found in bond"
+            return Response(status=404, body=body)
+
+        return Response(status=200)
+
+    def list_ports(self, req, bond_id):
+        body = self.port_bond.ports_in_bond(bond_id)
+        if body:
+            body = json.dumps(body)
+        else:
+            body = json.dumps([])
+
+        return Response(status=200, content_type='application/json', body=body)
+
+
 class restapi(app_manager.RyuApp):
     _CONTEXTS = {
         'network': network.Network,
@@ -411,7 +466,8 @@ class restapi(app_manager.RyuApp):
         'dpset': dpset.DPSet,
         'mac2port': mac_to_port.MacToPortTable,
         'mac2net': mac_to_network.MacToNetwork,
-        'api_db': api_db.API_DB
+        'api_db': api_db.API_DB,
+        'port_bond': port_bond.PortBond
     }
 
     def __init__(self, *args, **kwargs):
@@ -423,6 +479,7 @@ class restapi(app_manager.RyuApp):
         self.mac2port = kwargs['mac2port']
         self.mac2net = kwargs['mac2net']
         self.api_db = kwargs['api_db']
+        self.port_bond = kwargs['port_bond']
         mapper = wsgi.mapper
 
         # Change packet handler
@@ -525,6 +582,35 @@ class restapi(app_manager.RyuApp):
         mapper.connect('flowvisor', uri + '/unassign/{network_id}',
                        controller=FlowVisorController, action='unassignNetwork',
                        conditions=dict(method=['PUT']))
+
+        # Port Bonding related APIs
+        wsgi.registory['PortBondController'] = {'port_bond': self.port_bond}
+        self.port_bond.setNetworkObjHandle(self.nw)
+
+        uri = '/v1.0/port_bond'
+        mapper.connect('port_bond', uri,
+                       controller=PortBondController, action='list_bonds',
+                       conditions=dict(method=['GET']))
+
+        mapper.connect('port_bond', uri + '/{bond_id}_{network_id}',
+                       controller=PortBondController, action='create_bond',
+                       conditions=dict(method=['POST']))
+    
+        mapper.connect('port_bond', uri + '/{bond_id}',
+                       controller=PortBondController, action='delete_bond',
+                       conditions=dict(method=['DELETE']))
+
+        mapper.connect('port_bond', uri + '/{bond_id}/{dpid}_{port}',
+                       controller=PortBondController, action='add_port',
+                       conditions=dict(method=['PUT']))
+
+        mapper.connect('port_bond', uri + '/{bond_id}/{dpid}_{port}',
+                       controller=PortBondController, action='del_port',
+                       conditions=dict(method=['DELETE']))
+
+        mapper.connect('port_bond', uri + '/{bond_id}',
+                       controller=PortBondController, action='list_ports',
+                       conditions=dict(method=['GET']))
 
         self.loadDBContents()
 
