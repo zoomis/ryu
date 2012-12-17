@@ -20,6 +20,7 @@ import gevent
 
 from ryu.ofproto import ofproto_v1_0
 from ryu.lib.mac import haddr_to_bin, haddr_to_str
+from ryu.lib.dpid import dpid_to_str
 
 
 LOG = logging.getLogger('ryu.lib.ofctl_v1_0')
@@ -174,6 +175,7 @@ def send_stats_request(dp, stats, waiters, msgs):
     dp.set_xid(stats)
     waiters = waiters.setdefault(dp.id, {})
     lock = gevent.event.AsyncResult()
+    print 'Stats %s', str(stats.xid)
     waiters[stats.xid] = (lock, msgs)
     dp.send_msg(stats)
 
@@ -195,7 +197,8 @@ def get_desc_stats(dp, waiters):
              'sw_desc': stats.sw_desc,
              'serial_num': stats.serial_num,
              'dp_desc': stats.dp_desc}
-    desc = {str(dp.id): s}
+#    desc = {str(dp.id): s}
+    desc = {dpid_to_str(dp.id): s}
     return desc
 
 
@@ -225,7 +228,8 @@ def get_flow_stats(dp, waiters):
                  'packet_count': stats.packet_count,
                  'table_id': stats.table_id}
             flows.append(s)
-    flows = {str(dp.id): flows}
+#    flows = {str(dp.id): flows}
+    flows = {dpid_to_str(dp.id): flows}
     return flows
 
 
@@ -252,7 +256,8 @@ def get_port_stats(dp, waiters):
                  'rx_crc_err': stats.rx_crc_err,
                  'collisions': stats.collisions}
             ports.append(s)
-    ports = {str(dp.id): ports}
+#    ports = {str(dp.id): ports}
+    ports = {dpid_to_str(dp.id): ports}
     return ports
 
 
@@ -284,3 +289,32 @@ def delete_flow_entry(dp):
         command=dp.ofproto.OFPFC_DELETE)
 
     dp.send_msg(flow_mod)
+
+def send_features_request(dp, features, waiters, msgs):
+    dp.set_xid(features)
+    waiters = waiters.setdefault(dp.id, {})
+    lock = gevent.event.AsyncResult()
+    waiters[features.xid] = (lock, msgs)
+    dp.send_msg(features)
+
+    try:
+        lock.get(timeout=DEFAULT_TIMEOUT)
+    except gevent.Timeout:
+        del waiters[dp.id][features.xid]
+
+
+def get_features(dp, waiters):
+    print 'Waiters %s' % str(waiters)
+    features = dp.ofproto_parser.OFPFeaturesRequest(dp)
+    print 'feature requested %s' % str(features.xid)
+    msgs = []
+    send_features_request(dp, features, waiters, msgs)
+
+    for msg in msgs:
+	print msg
+        s = msg.body
+#    feature = {str(dp.id): s}
+    feature = {dpid_to_str(dp.id): s}
+    return feature
+
+

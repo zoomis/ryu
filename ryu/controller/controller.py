@@ -131,7 +131,6 @@ class Datapath(object):
         self.set_version(max(self.supported_ofp_version))
         self.xid = random.randint(0, self.ofproto.MAX_XID)
         self.id = None  # datapath_id is unknown yet
-        self.ports = None
         self.flow_format = ofproto_v1_0.NXFF_OPENFLOW10
 
     def close(self):
@@ -289,6 +288,9 @@ class Datapath(object):
         # ofproto_v1_0.NXFF_OPENFLOW10 but currently isn't.
         self.send_msg(set_format)
         self.send_barrier()
+
+    def is_reserved_port(self, port_no):
+        return port_no > self.ofproto.OFPP_MAX
 
 
 def datapath_connection_factory(socket, address):

@@ -26,6 +26,7 @@ from ryu.controller.handler import MAIN_DISPATCHER
 from ryu.controller.handler import set_ev_cls
 from ryu.ofproto import ofproto_v1_0
 from ryu.lib import ofctl_v1_0
+from ryu.lib.dpid import dpid_to_str
 from ryu.lib.mac import haddr_to_str
 from ryu.app.wsgi import ControllerBase, WSGIApplication
 
@@ -70,7 +71,10 @@ class StatsController(ControllerBase):
 
     def get_dpids(self, req, **_kwargs):
         dps = self.dpset.dps.keys()
-        body = json.dumps(dps)
+	dpstr = []
+	for dp in dps:
+	    dpstr.append(dpid_to_str(dp))
+        body = json.dumps(dpstr)
         return (Response(content_type='application/json', body=body))
 
     def get_devices(self, req, **_kwargs):
@@ -78,9 +82,7 @@ class StatsController(ControllerBase):
         return (Response(content_type='application/json', body=body))
 
     def get_features(self, req, dpid, **_kwargs):
-        dp = self.dpset.get(int(dpid))
-	print 'Datapath %s' % dpid
-	print 'Datapath %s' % dp
+        dp = self.dpset.get(int(dpid,16))
         if dp is None:
             return Response(status=404)
 
@@ -94,7 +96,7 @@ class StatsController(ControllerBase):
         return (Response(content_type='application/json', body=body))
 
     def get_desc_stats(self, req, dpid, **_kwargs):
-        dp = self.dpset.get(int(dpid))
+        dp = self.dpset.get(int(dpid,16))
         if dp is None:
             return Response(status=404)
 
@@ -108,7 +110,7 @@ class StatsController(ControllerBase):
         return (Response(content_type='application/json', body=body))
 
     def get_flow_stats(self, req, dpid, **_kwargs):
-        dp = self.dpset.get(int(dpid))
+        dp = self.dpset.get(int(dpid,16))
         if dp is None:
             return Response(status=404)
 
@@ -122,7 +124,7 @@ class StatsController(ControllerBase):
         return (Response(content_type='application/json', body=body))
 
     def get_port_stats(self, req, dpid, **_kwargs):
-        dp = self.dpset.get(int(dpid))
+        dp = self.dpset.get(int(dpid,16))
         if dp is None:
             return Response(status=404)
 
@@ -156,7 +158,7 @@ class StatsController(ControllerBase):
         return Response(status=200)
 
     def delete_flow_entry(self, req, dpid, **_kwargs):
-        dp = self.dpset.get(int(dpid))
+        dp = self.dpset.get(int(dpid,16))
         if dp is None:
             return Response(status=404)
 
@@ -265,6 +267,9 @@ class RestStatsApi(app_manager.RyuApp):
 		self.device.setdefault(haddr_to_str(src), {})
 		self.device[haddr_to_str(src)]['switchDPID'] = dpid
 		self.device[haddr_to_str(src)]['port'] = msg.in_port
+	else:
+		self.device[haddr_to_str(src)]['switchDPID'] = dpid
+		self.device[haddr_to_str(src)]['port'] = msg.in_port
 
 	self.device[haddr_to_str(src)].setdefault('ipv4',"")
 	if _eth_type == 0x0800:
@@ -282,8 +287,8 @@ class RestStatsApi(app_manager.RyuApp):
         msg = ev.msg
         datapath = msg.datapath
         ofproto = datapath.ofproto
-
-	LOG.info("port_status %s", msg)
+        port_no = msg.desc.port_no
+        dpid = datapath.id
 
     @set_ev_cls(ofp_event.EventOFPDescStatsReply, MAIN_DISPATCHER)
     def desc_stats_reply_handler(self, ev):

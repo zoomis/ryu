@@ -219,3 +219,4 @@ class RestStatsApi(app_manager.RyuApp):
     @set_ev_cls(ofp_event.EventOFPPortStatsReply, MAIN_DISPATCHER)
     def port_stats_reply_handler(self, ev):
         self.stats_reply_handler(ev)
+

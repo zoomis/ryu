@@ -15,6 +15,7 @@
 
 import logging
 import struct
+import json
 
 from ryu.base import app_manager
 from ryu.controller import mac_to_port
@@ -23,6 +24,7 @@ from ryu.controller.handler import MAIN_DISPATCHER
 from ryu.controller.handler import set_ev_cls
 from ryu.ofproto import ofproto_v1_0
 from ryu.lib.mac import haddr_to_str
+from ryu.lib.dpid import dpid_to_str
 
 
 LOG = logging.getLogger('ryu.app.simple_switch')
@@ -41,6 +43,9 @@ class SimpleSwitch(app_manager.RyuApp):
     def __init__(self, *args, **kwargs):
         super(SimpleSwitch, self).__init__(*args, **kwargs)
         self.mac_to_port = {}
+
+    def ip_to_str(self, addr):
+        return '.'.join('%d' % ord(char) for char in addr)
 
     def add_flow(self, datapath, in_port, dst, actions):
         ofproto = datapath.ofproto
@@ -71,8 +76,8 @@ class SimpleSwitch(app_manager.RyuApp):
         dpid = datapath.id
         self.mac_to_port.setdefault(dpid, {})
 
-        LOG.info("packet in %s %s %s %s",
-                 dpid, haddr_to_str(src), haddr_to_str(dst), msg.in_port)
+#        LOG.info("packet in %s %s %s %s",
+#                 dpid, haddr_to_str(src), haddr_to_str(dst), msg.in_port)
 
         # learn a mac address to avoid FLOOD next time.
         self.mac_to_port[dpid][src] = msg.in_port
