@@ -534,8 +534,8 @@ class restsaviapi(app_manager.RyuApp):
 			aps = self.device[mac]['attachmentPoint']
 			for ap in aps:
 				if ap['switchDPID'] == dpid_str and ap['port'] == port_no:
-				exist = mac
-				break
+					exist = mac
+					break
 
 		if not exist is None:
 			del self.device[exist]
