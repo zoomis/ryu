@@ -85,18 +85,24 @@ class TestOFPHello(unittest.TestCase):
         pass
 
     def test_parser(self):
+        version = ofproto_v1_2.OFP_VERSION
+        msg_type = ofproto_v1_2.OFPT_HELLO
+        msg_len = ofproto_v1_2.OFP_HEADER_SIZE
         xid = 2183948390
-        res = OFPHello.parser(object, \
-                              ofproto_v1_2.OFP_VERSION, \
-                              ofproto_v1_2.OFPT_HELLO, \
-                              ofproto_v1_2.OFP_HEADER_SIZE, \
-                              xid, \
-                              str().zfill(ofproto_v1_2.OFP_HEADER_SIZE))
+        data = '\x00\x01\x02\x03'
 
-        eq_(ofproto_v1_2.OFP_VERSION, res.version)
-        eq_(ofproto_v1_2.OFPT_HELLO, res.msg_type)
-        eq_(ofproto_v1_2.OFP_HEADER_SIZE, res.msg_len)
+        fmt = ofproto_v1_2.OFP_HEADER_PACK_STR
+        buf = pack(fmt, version, msg_type, msg_len, xid) \
+            + data
+
+        res = OFPHello.parser(object, version, msg_type, msg_len, xid,
+                              bytearray(buf))
+
+        eq_(version, res.version)
+        eq_(msg_type, res.msg_type)
+        eq_(msg_len, res.msg_len)
         eq_(xid, res.xid)
+        eq_(buffer(buf), res.buf)
 
     def test_serialize(self):
 
@@ -380,7 +386,7 @@ class TestOFPPort(unittest.TestCase):
 
     fmt = ofproto_v1_2.OFP_PORT_PACK_STR
     buf = pack(fmt, port_no, hw_addr, name, config, state, curr,
-                advertised, supported, peer, curr_speed, max_speed)
+               advertised, supported, peer, curr_speed, max_speed)
 
     c = OFPPort(port_no, hw_addr, name, config, state, curr,
                 advertised, supported, peer, curr_speed, max_speed)
@@ -482,7 +488,7 @@ class TestOFPSwitchFeatures(unittest.TestCase):
         version = ofproto_v1_2.OFP_VERSION
         msg_type = ofproto_v1_2.OFPT_FEATURES_REPLY
         msg_len = ofproto_v1_2.OFP_SWITCH_FEATURES_SIZE \
-                + ofproto_v1_2.OFP_PORT_SIZE
+            + ofproto_v1_2.OFP_PORT_SIZE
         xid = 2495926989
 
         fmt = ofproto_v1_2.OFP_HEADER_PACK_STR
@@ -1130,7 +1136,7 @@ class TestOFPInstructionActions(unittest.TestCase):
     # '!HH4x'...type, len, pad(4)
     type_ = ofproto_v1_2.OFPIT_WRITE_ACTIONS
     len_ = ofproto_v1_2.OFP_INSTRUCTION_ACTIONS_SIZE \
-         + ofproto_v1_2.OFP_ACTION_OUTPUT_SIZE
+        + ofproto_v1_2.OFP_ACTION_OUTPUT_SIZE
 
     fmt = ofproto_v1_2.OFP_INSTRUCTION_ACTIONS_PACK_STR
     buf = pack(fmt, type_, len_)
@@ -1835,7 +1841,7 @@ class TestOFPBucket(unittest.TestCase):
     # OFP_BUCKET_PACK_STR
     # '!HHII4x'...len, weight, watch_port, watch_group, pad(4)
     len_ = ofproto_v1_2.OFP_BUCKET_SIZE \
-         + ofproto_v1_2.OFP_ACTION_OUTPUT_SIZE
+        + ofproto_v1_2.OFP_ACTION_OUTPUT_SIZE
     weight = 4386
     watch_port = 6606
     watch_group = 3
@@ -2010,8 +2016,8 @@ class TestOFPPortMod(unittest.TestCase):
         eq_(0, self.c.xid)
 
         fmt = '!' \
-          + ofproto_v1_2.OFP_HEADER_PACK_STR.replace('!', '') \
-          + ofproto_v1_2.OFP_PORT_MOD_PACK_STR.replace('!', '')
+            + ofproto_v1_2.OFP_HEADER_PACK_STR.replace('!', '') \
+            + ofproto_v1_2.OFP_PORT_MOD_PACK_STR.replace('!', '')
 
         res = struct.unpack(fmt, str(self.c.buf))
 
@@ -2059,8 +2065,8 @@ class TestOFPTableMod(unittest.TestCase):
         eq_(0, self.c.xid)
 
         fmt = '!' \
-          + ofproto_v1_2.OFP_HEADER_PACK_STR.replace('!', '') \
-          + ofproto_v1_2.OFP_TABLE_MOD_PACK_STR.replace('!', '')
+            + ofproto_v1_2.OFP_HEADER_PACK_STR.replace('!', '') \
+            + ofproto_v1_2.OFP_TABLE_MOD_PACK_STR.replace('!', '')
 
         res = struct.unpack(fmt, str(self.c.buf))
 
@@ -2321,8 +2327,9 @@ class TestOFPFlowStatsRequest(unittest.TestCase):
 
         eq_(res[0], ofproto_v1_2.OFP_VERSION)
         eq_(res[1], ofproto_v1_2.OFPT_STATS_REQUEST)
-        eq_(res[2], ofproto_v1_2.OFP_STATS_REPLY_SIZE \
-                  + ofproto_v1_2.OFP_FLOW_STATS_REQUEST_SIZE)
+        size = ofproto_v1_2.OFP_STATS_REPLY_SIZE \
+            + ofproto_v1_2.OFP_FLOW_STATS_REQUEST_SIZE
+        eq_(res[2], size)
         eq_(res[3], 0)
         eq_(res[4], ofproto_v1_2.OFPST_FLOW)
         eq_(res[5], 0)
@@ -2342,7 +2349,7 @@ class TestOFPFlowStats(unittest.TestCase):
     #                    priority, idle_timeoutl, hard_timeout, pad(6),
     #                    cookie, packet_count, byte_count
     length = ofproto_v1_2.OFP_FLOW_STATS_SIZE \
-           + ofproto_v1_2.OFP_INSTRUCTION_GOTO_TABLE_SIZE
+        + ofproto_v1_2.OFP_INSTRUCTION_GOTO_TABLE_SIZE
     table_id = 81
     duration_sec = 2484712402
     duration_nsec = 3999715196
@@ -2464,8 +2471,9 @@ class TestOFPAggregateStatsRequest(unittest.TestCase):
 
         eq_(res[0], ofproto_v1_2.OFP_VERSION)
         eq_(res[1], ofproto_v1_2.OFPT_STATS_REQUEST)
-        eq_(res[2], ofproto_v1_2.OFP_STATS_REPLY_SIZE +
-                    ofproto_v1_2.OFP_AGGREGATE_STATS_REQUEST_SIZE)
+        size = ofproto_v1_2.OFP_STATS_REPLY_SIZE \
+            + ofproto_v1_2.OFP_AGGREGATE_STATS_REQUEST_SIZE
+        eq_(res[2], size)
         eq_(res[3], 0)
         eq_(res[4], ofproto_v1_2.OFPST_AGGREGATE)
         eq_(res[5], 0)
@@ -2632,8 +2640,9 @@ class TestOFPPortStatsRequest(unittest.TestCase):
 
         eq_(res[0], ofproto_v1_2.OFP_VERSION)
         eq_(res[1], ofproto_v1_2.OFPT_STATS_REQUEST)
-        eq_(res[2], ofproto_v1_2.OFP_STATS_REQUEST_SIZE \
-                  + ofproto_v1_2.OFP_PORT_STATS_REQUEST_SIZE)
+        size = ofproto_v1_2.OFP_STATS_REQUEST_SIZE \
+            + ofproto_v1_2.OFP_PORT_STATS_REQUEST_SIZE
+        eq_(res[2], size)
         eq_(res[3], 0)
         eq_(res[4], ofproto_v1_2.OFPST_PORT)
         eq_(res[5], 0)
@@ -2735,8 +2744,9 @@ class TestOFPQueueStatsRequest(unittest.TestCase):
 
         eq_(res[0], ofproto_v1_2.OFP_VERSION)
         eq_(res[1], ofproto_v1_2.OFPT_STATS_REQUEST)
-        eq_(res[2], ofproto_v1_2.OFP_STATS_REQUEST_SIZE \
-                  + ofproto_v1_2.OFP_QUEUE_STATS_REQUEST_SIZE)
+        size = ofproto_v1_2.OFP_STATS_REQUEST_SIZE \
+            + ofproto_v1_2.OFP_QUEUE_STATS_REQUEST_SIZE
+        eq_(res[2], size)
         eq_(res[3], 0)
         eq_(res[4], ofproto_v1_2.OFPST_QUEUE)
         eq_(res[5], 0)
@@ -2847,8 +2857,9 @@ class TestOFPGroupStatsRequest(unittest.TestCase):
 
         eq_(res[0], ofproto_v1_2.OFP_VERSION)
         eq_(res[1], ofproto_v1_2.OFPT_STATS_REQUEST)
-        eq_(res[2], ofproto_v1_2.OFP_STATS_REQUEST_SIZE \
-                  + ofproto_v1_2.OFP_GROUP_STATS_REQUEST_SIZE)
+        size = ofproto_v1_2.OFP_STATS_REQUEST_SIZE \
+            + ofproto_v1_2.OFP_GROUP_STATS_REQUEST_SIZE
+        eq_(res[2], size)
         eq_(res[3], 0)
         eq_(res[4], ofproto_v1_2.OFPST_GROUP)
         eq_(res[5], 0)
@@ -2861,7 +2872,7 @@ class TestOFPGroupStats(unittest.TestCase):
 
     # OFP_GROUP_STATS_PACK_STR = '!H2xII4xQQ'
     length = ofproto_v1_2.OFP_GROUP_STATS_SIZE \
-           + ofproto_v1_2.OFP_BUCKET_COUNTER_SIZE
+        + ofproto_v1_2.OFP_BUCKET_COUNTER_SIZE
     group_id = 6606
     ref_count = 2102
     packet_count = 6489108735192644493
@@ -2931,8 +2942,8 @@ class TestOFPGroupDescStats(unittest.TestCase):
 
     # OFP_GROUP_DESC_STATS_PACK_STR = '!HBxI'
     length = ofproto_v1_2.OFP_GROUP_DESC_STATS_SIZE \
-           + ofproto_v1_2.OFP_BUCKET_SIZE \
-           + ofproto_v1_2.OFP_ACTION_OUTPUT_SIZE
+        + ofproto_v1_2.OFP_BUCKET_SIZE \
+        + ofproto_v1_2.OFP_ACTION_OUTPUT_SIZE
     type_ = ofproto_v1_2.OFPGT_ALL
     group_id = 6606
 
@@ -3122,9 +3133,9 @@ class TestOFPQueueGetConfigRequest(unittest.TestCase):
         eq_(ofproto_v1_2.OFPT_QUEUE_GET_CONFIG_REQUEST, self.c.msg_type)
         eq_(0, self.c.xid)
 
-        fmt = '!' \
-          + ofproto_v1_2.OFP_HEADER_PACK_STR.replace('!', '') \
-          + ofproto_v1_2.OFP_QUEUE_GET_CONFIG_REQUEST_PACK_STR.replace('!', '')
+        a = ofproto_v1_2.OFP_HEADER_PACK_STR.replace('!', '')
+        b = ofproto_v1_2.OFP_QUEUE_GET_CONFIG_REQUEST_PACK_STR.replace('!', '')
+        fmt = '!' + a + b
 
         res = struct.unpack(fmt, str(self.c.buf))
 
@@ -3178,8 +3189,8 @@ class TestOFPQueueGetConfigReply(unittest.TestCase):
     version = ofproto_v1_2.OFP_VERSION
     msg_type = ofproto_v1_2.OFPT_QUEUE_GET_CONFIG_REPLY
     msg_len = ofproto_v1_2.OFP_QUEUE_GET_CONFIG_REPLY_SIZE \
-            + ofproto_v1_2.OFP_PACKET_QUEUE_SIZE \
-            + ofproto_v1_2.OFP_QUEUE_PROP_HEADER_SIZE
+        + ofproto_v1_2.OFP_PACKET_QUEUE_SIZE \
+        + ofproto_v1_2.OFP_QUEUE_PROP_HEADER_SIZE
     xid = 2495926989
 
     fmt = ofproto_v1_2.OFP_HEADER_PACK_STR
@@ -3206,7 +3217,7 @@ class TestOFPQueueGetConfigReply(unittest.TestCase):
     queue_id = 6606
     queue_port = 41186
     queue_len = ofproto_v1_2.OFP_PACKET_QUEUE_SIZE \
-              + ofproto_v1_2.OFP_QUEUE_PROP_HEADER_SIZE
+        + ofproto_v1_2.OFP_QUEUE_PROP_HEADER_SIZE
     queues = [OFPPacketQueue(queue_id, queue_port, queue_len, properties)]
 
     fmt = ofproto_v1_2.OFP_PACKET_QUEUE_PACK_STR

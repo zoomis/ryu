@@ -32,25 +32,27 @@ class TestOfproto_Parser(unittest.TestCase):
     def setUp(self):
         LOG.debug('setUp')
         self.bufHello = binascii.unhexlify('0100000800000001')
-        self.bufFeaturesReply = binascii.unhexlify(
-                '010600b0000000020000000000000abc' \
-                + '00000100010000000000008700000fff' \
-                + '0002aefa39d2b9177472656d61302d30' \
-                + '00000000000000000000000000000000' \
-                + '000000c0000000000000000000000000' \
-                + 'fffe723f9a764cc87673775f30786162' \
-                + '63000000000000000000000100000001' \
-                + '00000082000000000000000000000000' \
-                + '00012200d6c5a1947472656d61312d30' \
-                + '00000000000000000000000000000000' \
-                + '000000c0000000000000000000000000')
-        self.bufPacketIn = binascii.unhexlify(
-                '010a005200000000000001010040' \
-                + '00020000000000000002000000000001' \
-                + '080045000032000000004011f967c0a8' \
-                + '0001c0a8000200010001001e00000000' \
-                + '00000000000000000000000000000000' \
-                + '00000000')
+
+        fr = '010600b0000000020000000000000abc' \
+            + '00000100010000000000008700000fff' \
+            + '0002aefa39d2b9177472656d61302d30' \
+            + '00000000000000000000000000000000' \
+            + '000000c0000000000000000000000000' \
+            + 'fffe723f9a764cc87673775f30786162' \
+            + '63000000000000000000000100000001' \
+            + '00000082000000000000000000000000' \
+            + '00012200d6c5a1947472656d61312d30' \
+            + '00000000000000000000000000000000' \
+            + '000000c0000000000000000000000000'
+        self.bufFeaturesReply = binascii.unhexlify(fr)
+
+        pi = '010a005200000000000001010040' \
+            + '00020000000000000002000000000001' \
+            + '080045000032000000004011f967c0a8' \
+            + '0001c0a8000200010001001e00000000' \
+            + '00000000000000000000000000000000' \
+            + '00000000'
+        self.bufPacketIn = binascii.unhexlify(pi)
 
     def tearDown(self):
         LOG.debug('tearDown')
@@ -159,18 +161,23 @@ class TestMsgBase(unittest.TestCase):
         c.set_xid(xid)
 
     def _test_parser(self, msg_type=ofproto_v1_0.OFPT_HELLO):
+        version = ofproto_v1_0.OFP_VERSION
+        msg_len = ofproto_v1_0.OFP_HEADER_SIZE
         xid = 2183948390
-        res = ofproto_v1_0_parser.OFPHello.parser(object, \
-                              ofproto_v1_0.OFP_VERSION, \
-                              msg_type, \
-                              ofproto_v1_0.OFP_HEADER_SIZE, \
-                              xid, \
-                              str().zfill(ofproto_v1_0.OFP_HEADER_SIZE))
+        data = '\x00\x01\x02\x03'
 
-        eq_(ofproto_v1_0.OFP_VERSION, res.version)
-        eq_(ofproto_v1_0.OFPT_HELLO, res.msg_type)
-        eq_(ofproto_v1_0.OFP_HEADER_SIZE, res.msg_len)
+        fmt = ofproto_v1_0.OFP_HEADER_PACK_STR
+        buf = struct.pack(fmt, version, msg_type, msg_len, xid) \
+            + data
+
+        res = ofproto_v1_0_parser.OFPHello.parser(
+            object, version, msg_type, msg_len, xid, bytearray(buf))
+
+        eq_(version, res.version)
+        eq_(msg_type, res.msg_type)
+        eq_(msg_len, res.msg_len)
         eq_(xid, res.xid)
+        eq_(buffer(buf), res.buf)
 
         # test __str__()
         list_ = ('version:', 'msg_type', 'xid')
@@ -252,7 +259,7 @@ class TestMsgPackInto(unittest.TestCase):
     def _test_msg_pack_into(self, offset_type='e'):
         fmt = '!HH'
         len_ = struct.calcsize(fmt)
-        buf = bytearray().zfill(len_)
+        buf = bytearray(len_)
         offset = len_
         arg1 = 1
         arg2 = 2

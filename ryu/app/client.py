@@ -24,6 +24,7 @@ class OFPClientV1_0(object):
     # /networks/{network_id}/{dpid}_{port}
     network_path = 'networks/%s'
     port_path = 'networks/%s/%s_%s'
+    mac_path = 'networks/%s/macs/%s'
 
     def __init__(self, address):
         r = urlparse.SplitResult('', address, '', '', '')
@@ -72,5 +73,10 @@ class OFPClientV1_0(object):
     def delete_port(self, network_id, dpid, port):
         self._do_request('DELETE', self.port_path % (network_id, dpid, port))
 
+    def add_mac(self, network_id, mac):
+        self._do_request('PUT', self.mac_path % (network_id, mac))
+
+    def del_mac(self, network_id, mac):
+        self._do_request('DELETE', self.mac_path % (network_id, mac))
 
 OFPClient = OFPClientV1_0

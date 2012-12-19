@@ -75,17 +75,6 @@ class Network(object):
         except KeyError:
             raise NetworkNotFound(network_id=network_id)
 
-    # Return list of macs associated with network ID
-    def list_macs(self, network_id):
-        try:
-            # use list() to keep compatibility for output
-            # set() isn't json serializable
-            assert self.mac2net != None
-            return list(self.mac2net.list_macs(network_id))
-        except KeyError:
-            raise NetworkNotFound(network_id=network_id)
-
-
     def _update_port(self, network_id, dpid, port, port_may_exist):
         def _known_nw_id(nw_id):
             return nw_id is not None and nw_id != self.nw_id_unknown
@@ -94,7 +83,7 @@ class Network(object):
         try:
             old_network_id = self.dpids.get(dpid, {}).get(port, None)
             if ((dpid, port) in self.networks[network_id] or
-                _known_nw_id(old_network_id)):
+                    _known_nw_id(old_network_id)):
                 if not port_may_exist:
                     raise PortAlreadyExist(network_id=network_id,
                                            dpid=dpid, port=port)
@@ -110,7 +99,11 @@ class Network(object):
         self.dpids[dpid][port] = network_id
 
     def create_port(self, network_id, dpid, port):
-        self._update_port(network_id, dpid, port, False)
+        if NW_ID_EXTERNAL != self.dpids.get(dpid, {}).get(port, None):
+            self._update_port(network_id, dpid, port, False)
+        else:
+            # If a port has been registered as external, leave it be
+            pass
 
     def update_port(self, network_id, dpid, port):
         self._update_port(network_id, dpid, port, True)
@@ -139,7 +132,8 @@ class Network(object):
             return True
 
         if (allow_nw_id_external is not None and
-            (allow_nw_id_external == nw_id or allow_nw_id_external == out_nw)):
+                (allow_nw_id_external == nw_id or
+                    allow_nw_id_external == out_nw)):
             # allow external network -> known network id
             return True
 
@@ -190,14 +184,6 @@ class Network(object):
 
         return ret
 
-    def add_mac(self, net_id, mac):
-        assert self.mac2net is not None
-        
-        # Must convert MAC address into ASCII char types
-        charMAC = haddr_to_bin(mac)
-        
-        self.mac2net.add_mac(charMAC, net_id, NW_ID_EXTERNAL)
-
     def add_iface(self, net_id, iface_id):
         return # Feature not completed
         assert self.mac2net is not None
@@ -209,14 +195,6 @@ class Network(object):
         
         self.mac2net.add_mac(charMAC, net_id, NW_ID_EXTERNAL)
     
-    def del_mac(self, mac):
-        assert self.mac2net is not None
-
-        # Must convert MAC address into ASCII char types
-        charMAC = haddr_to_bin(mac)
-        
-        self.mac2net.del_mac(charMAC)
-
     def del_iface(self, iface_id):
         return # Feature not completed
         assert self.mac2net is not None

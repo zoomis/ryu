@@ -43,16 +43,16 @@ class SimpleIsolation(app_manager.RyuApp):
         'network': network.Network,
         'dpset': dpset.DPSet,
         'fv_cli': flowvisor_cli.FlowVisor_CLI,
-        'mac2port': mac_to_port.MacToPortTable
-        }
+        'mac2port': mac_to_port.MacToPortTable,
+        'mac2net': mac_to_network.MacToNetwork
+    }
 
     def __init__(self, *args, **kwargs):
         super(SimpleIsolation, self).__init__(*args, **kwargs)
         self.nw = kwargs['network']
         self.dpset = kwargs['dpset']
         self.mac2port = kwargs['mac2port']
-        self.mac2net = mac_to_network.MacToNetwork(self.nw)
-        self.nw.mac2net = self.mac2net # Give Network access to mac2net object
+        self.mac2net = kwargs['mac2net']
         self.fv_cli = kwargs['fv_cli']
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
@@ -65,10 +65,6 @@ class SimpleIsolation(app_manager.RyuApp):
 
         self.mac2port.dpid_add(ev.msg.datapath_id)
         self.nw.add_datapath(ev.msg)
-
-    @set_ev_cls(ofp_event.EventOFPBarrierReply)
-    def barrier_reply_handler(self, ev):
-        LOG.debug('barrier reply ev %s msg %s', ev, ev.msg)
 
     @staticmethod
     def _modflow_and_send_packet(msg, src, dst, actions):
@@ -141,6 +137,7 @@ class SimpleIsolation(app_manager.RyuApp):
         # LOG.debug('packet in ev %s msg %s', ev, ev.msg)
         msg = ev.msg
         datapath = msg.datapath
+        ofproto = datapath.ofproto
 
         dst, src, _eth_type = struct.unpack_from('!6s6sH', buffer(msg.data), 0)
 
@@ -175,10 +172,13 @@ class SimpleIsolation(app_manager.RyuApp):
             # new port.
             rule = nx_match.ClsRule()
             rule.set_dl_dst(src)
-            datapath.send_flow_mod(rule=rule, cookie=0,
-                command=datapath.ofproto.OFPFC_DELETE, idle_timeout=0,
-                hard_timeout=0, priority=datapath.ofproto.OFP_DEFAULT_PRIORITY,
-                out_port=old_port)
+            datapath.send_flow_mod(rule=rule,
+                                   cookie=0,
+                                   command=ofproto.OFPFC_DELETE,
+                                   idle_timeout=0,
+                                   hard_timeout=0,
+                                   priority=ofproto.OFP_DEFAULT_PRIORITY,
+                                   out_port=old_port)
 
             # to make sure the old flow entries are purged.
             datapath.send_barrier()
@@ -398,7 +398,3 @@ class SimpleIsolation(app_manager.RyuApp):
             self._port_del(ev)
         else:
             assert reason == ofproto.OFPPR_MODIFY
-
-    @set_ev_cls(ofp_event.EventOFPBarrierReply, MAIN_DISPATCHER)
-    def barrier_replay_handler(self, ev):
-        pass

@@ -16,18 +16,17 @@
 
 import logging
 
-from ryu.exception import MacAddressDuplicated
+from ryu.exception import MacAddressDuplicated, MacAddressNotFound
 from ryu.lib.mac import haddr_to_str
 
 LOG = logging.getLogger('ryu.controller.mac_to_network')
 
 
 class MacToNetwork(object):
-    def __init__(self, nw):
+    def __init__(self):
         super(MacToNetwork, self).__init__()
         self.mac_to_net = {}
         self.dpid = {}
-        self.nw = nw
 
     def get_network(self, mac, default=None):
         return self.mac_to_net.get(mac, default)
@@ -55,7 +54,10 @@ class MacToNetwork(object):
         raise MacAddressDuplicated(mac=mac)
 
     def del_mac(self, mac):
-        del self.mac_to_net[mac]
+        try:
+            del self.mac_to_net[mac]
+        except:
+            raise MacAddressNotFound(mac=mac)
     
     def list_macs(self, nw_id):
         mac_list = []

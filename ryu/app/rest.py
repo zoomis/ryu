@@ -1,5 +1,8 @@
+# vim: tabstop=4 shiftwidth=4 softtabstop=4
+#
 # Copyright (C) 2012 Nippon Telegraph and Telephone Corporation.
 # Copyright (C) 2012 Isaku Yamahata <yamahata at private email ne jp>
+# Copyright (C) 2012, The SAVI Project.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,11 +25,13 @@ from ryu.controller import network
 from ryu.controller import flowvisor_cli
 from ryu.controller import dpset
 from ryu.controller import mac_to_port
+from ryu.controller import mac_to_network
+from ryu.controller import api_db
 from ryu.exception import NetworkNotFound, NetworkAlreadyExist
 from ryu.exception import PortNotFound, PortAlreadyExist, PortUnknown
 from ryu.app.wsgi import ControllerBase, WSGIApplication
-from ryu.exception import MacAddressDuplicated
-from ryu.lib.mac import is_multicast, haddr_to_str
+from ryu.exception import MacAddressDuplicated, MacAddressNotFound
+from ryu.lib.mac import is_multicast, haddr_to_str, haddr_to_bin
 from ryu.app.rest_nw_id import NW_ID_EXTERNAL
 
 ## TODO:XXX
@@ -72,11 +77,18 @@ from ryu.app.rest_nw_id import NW_ID_EXTERNAL
 class NetworkController(ControllerBase):
     def __init__(self, req, link, data, **config):
         super(NetworkController, self).__init__(req, link, data, **config)
-        self.nw = data
+        self.nw = data.get('nw')
+        self.mac2net = data.get('mac2net')
+        self.api_db = data.get('api_db')
+
+        assert self.nw is not None
+        assert self.mac2net is not None
+        assert self.api_db is not None
 
     def create(self, req, network_id, **_kwargs):
         try:
             self.nw.create_network(network_id)
+            self.api_db.createNetwork(network_id)
         except NetworkAlreadyExist:
             return Response(status=409)
         else:
@@ -84,6 +96,7 @@ class NetworkController(ControllerBase):
 
     def update(self, req, network_id, **_kwargs):
         self.nw.update_network(network_id)
+        self.api_db.updateNetwork(network_id)
         return Response(status=200)
 
     def lists(self, req, **_kwargs):
@@ -92,19 +105,19 @@ class NetworkController(ControllerBase):
 
     def list_macs(self, req, network_id, **_kwargs):
         mac_list = []
-        for macAddr in self.nw.list_macs(network_id):
-            macStr = ""
-            for byte in map(ord, macAddr): #Converts byte-wise mac addr to proper string
-                macStr += "%X" % byte + "-"
-            
-            mac_list.append(macStr[:-1])
+        for macAddr in self.mac2net.list_macs(network_id):
+            mac_list.append(haddr_to_str(macAddr))
             
         body = json.dumps(mac_list)
         return Response(content_type='application/json', body=body)
 
     def add_mac(self, req, network_id, mac, **_kwargs):
         try:
-            self.nw.add_mac(network_id, mac)
+            # Must convert MAC address into ASCII char types
+            charMAC = haddr_to_bin(mac)
+
+            self.mac2net.add_mac(charMAC, network_id, NW_ID_EXTERNAL)
+            self.api_db.addMAC(network_id, mac)
         except MacAddressDuplicated:
             return Response(status=409)
         else:
@@ -122,9 +135,13 @@ class NetworkController(ControllerBase):
         try:
             # 'network_id' not actually required
             # Kept to keep uri format similar to add_mac
-            self.nw.del_mac(mac)
-        except:
-            return Response(status=500)
+            # Must convert MAC address into ASCII char types
+            charMAC = haddr_to_bin(mac)
+
+            self.mac2net.del_mac(charMAC)
+            self.api_db.delMAC(network_id, mac)
+        except MacAddressNotFound:
+            return Response(status=404)
         else:
             return Response(status=200)
 
@@ -141,6 +158,7 @@ class NetworkController(ControllerBase):
     def delete(self, req, network_id, **_kwargs):
         try:
             self.nw.remove_network(network_id)
+            self.api_db.deleteNetwork(network_id)
         except NetworkNotFound:
             return Response(status=404)
 
@@ -157,13 +175,17 @@ class PortController(ControllerBase):
         self.nw = data.get('nw')
         self.fv_cli = data.get('fv_cli')
         self.mac2port = data.get('mac2port')
+        self.api_db = data.get('api_db')
+
         assert self.fv_cli is not None
         assert self.nw is not None
         assert self.mac2port is not None
+        assert self.api_db is not None
 
     def create(self, req, network_id, dpid, port_id, **_kwargs):
         try:
             self.nw.create_port(network_id, int(dpid, 16), int(port_id))
+            self.api_db.createPort(network_id, dpid, port_id)
         except NetworkNotFound:
             return Response(status=404)
         except PortAlreadyExist:
@@ -181,6 +203,7 @@ class PortController(ControllerBase):
             self.fv_cli.updatePort(network_id, int(dpid, 16),
                                     int(port_id), True, old_network_id)
             self.nw.update_port(network_id, int(dpid, 16), int(port_id))
+            self.api_db.updatePort(network_id, dpid, port_id)
         except (NetworkNotFound, PortUnknown):
             return Response(status=404)
 
@@ -213,6 +236,7 @@ class PortController(ControllerBase):
                 self.fv_cli.delFlowSpaceIDs(flowspace_ids)
                     
             self.nw.remove_port(network_id, int(dpid, 16), int(port_id))
+            self.api_db.deletePort(network_id, dpid, port_id)
         except (NetworkNotFound, PortNotFound):
             return Response(status=404)
 
@@ -226,6 +250,7 @@ class FlowVisorController(ControllerBase):
         self.nw = data.get('nw')
         self.dpset = data.get('dpset')
         self.mac2port = data.get('mac2port')
+
         assert self.fv_cli is not None
         assert self.nw is not None
         assert self.dpset is not None
@@ -234,6 +259,16 @@ class FlowVisorController(ControllerBase):
     def listSlices(self, req, **_kwargs):
         body = self.fv_cli.listSlices()
         if (body.find("Slice 0") != -1):
+            status = 200
+        else:
+            status = 500
+
+        return Response(status=status, content_type='application/json', body=body)
+
+    def listFlowSpace(self, req, **_kwargs):
+        body = self.fv_cli.listFlowSpace()
+        # Should always be a rule 0 (default rule) installed
+        if (body.find("rule 0") != -1):
             status = 200
         else:
             status = 500
@@ -374,8 +409,10 @@ class restapi(app_manager.RyuApp):
         'wsgi': WSGIApplication,
         'fv_cli': flowvisor_cli.FlowVisor_CLI,
         'dpset': dpset.DPSet,
-        'mac2port': mac_to_port.MacToPortTable
-        }
+        'mac2port': mac_to_port.MacToPortTable,
+        'mac2net': mac_to_network.MacToNetwork,
+        'api_db': api_db.API_DB
+    }
 
     def __init__(self, *args, **kwargs):
         super(restapi, self).__init__(*args, **kwargs)
@@ -384,10 +421,14 @@ class restapi(app_manager.RyuApp):
         wsgi = kwargs['wsgi']
         self.dpset = kwargs['dpset']
         self.mac2port = kwargs['mac2port']
+        self.mac2net = kwargs['mac2net']
+        self.api_db = kwargs['api_db']
         mapper = wsgi.mapper
 
         # Change packet handler
-        wsgi.registory['NetworkController'] = self.nw
+        wsgi.registory['NetworkController'] = { 'nw' : self.nw,
+                                                'mac2net' : self.mac2net,
+                                                'api_db' : self.api_db }
         mapper.connect('networks', '/v1.0/packethandler/{handler_id}',
                        controller=NetworkController, action='setPacketHandler',
                        conditions=dict(method=['PUT']))
@@ -435,9 +476,10 @@ class restapi(app_manager.RyuApp):
                        controller=NetworkController, action='del_iface',
                        conditions=dict(method=['DELETE']))
 
-        wsgi.registory['PortController'] = {"nw" : self.nw,
-                                            "fv_cli" : self.fv_cli,
-                                            "mac2port" : self.mac2port}
+        wsgi.registory['PortController'] = {'nw' : self.nw,
+                                            'fv_cli' : self.fv_cli,
+                                            'mac2port' : self.mac2port,
+                                            'api_db' : self.api_db    }
         mapper.connect('networks', uri,
                        controller=PortController, action='lists',
                        conditions=dict(method=['GET']))
@@ -464,6 +506,10 @@ class restapi(app_manager.RyuApp):
                        controller=FlowVisorController, action='listSlices',
                        conditions=dict(method=['GET']))
 
+        mapper.connect('flowvisor', uri + '/flowspace',
+                       controller=FlowVisorController, action='listFlowSpace',
+                       conditions=dict(method=['GET']))
+
         mapper.connect('flowvisor', uri + '/{sliceName}',
                        controller=FlowVisorController, action='deleteSlice',
                        conditions=dict(method=['DELETE']))
@@ -480,3 +526,19 @@ class restapi(app_manager.RyuApp):
                        controller=FlowVisorController, action='unassignNetwork',
                        conditions=dict(method=['PUT']))
 
+        self.loadDBContents()
+
+    # If any previous API calls are stored in DB, reload them now
+    def loadDBContents(self):
+        networks = self.api_db.getNetworks()
+        ports = self.api_db.getPorts()
+        macs = self.api_db.getMACs()
+
+        for network_id in networks:
+            self.nw.create_network(network_id)
+
+        for (network_id, dpid, port_num) in ports:
+            self.nw.create_port(network_id, int(dpid, 16), int(port_num))
+
+        for (network_id, mac_address) in macs:
+            self.mac2net.add_mac(haddr_to_bin(mac_address), network_id, NW_ID_EXTERNAL)

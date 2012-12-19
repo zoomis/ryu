@@ -49,9 +49,7 @@ class TestFlowBase(app_manager.RyuApp):
             To check flows of switch.
     """
 
-    _CONTEXTS = {
-        'dpset': dpset.DPSet,
-        }
+    _CONTEXTS = {'dpset': dpset.DPSet}
 
     def __init__(self, *args, **kwargs):
         super(TestFlowBase, self).__init__(*args, **kwargs)
@@ -63,6 +61,7 @@ class TestFlowBase(app_manager.RyuApp):
         for t in dir(self):
             if t.startswith("test_"):
                 self.pending.append(t)
+        self.pending.sort(reverse=True)
         self.unclear = len(self.pending)
 
     def delete_all_flows(self, dp):
@@ -70,17 +69,17 @@ class TestFlowBase(app_manager.RyuApp):
             match = dp.ofproto_parser.OFPMatch(dp.ofproto.OFPFW_ALL,
                                                0, 0, 0, 0, 0,
                                                0, 0, 0, 0, 0, 0, 0)
-            m = dp.ofproto_parser.OFPFlowMod(
-                                             dp, match, 0,
+            m = dp.ofproto_parser.OFPFlowMod(dp, match, 0,
                                              dp.ofproto.OFPFC_DELETE,
                                              0, 0, 0, 0,
                                              dp.ofproto.OFPP_NONE, 0, None)
         elif dp.ofproto == ofproto_v1_2:
             match = dp.ofproto_parser.OFPMatch()
-            m = dp.ofproto_parser.OFPFlowMod(dp, 0, 0, 0,
+            m = dp.ofproto_parser.OFPFlowMod(dp, 0, 0, dp.ofproto.OFPTT_ALL,
                                              dp.ofproto.OFPFC_DELETE,
                                              0, 0, 0, 0xffffffff,
-                                             dp.ofproto.OFPP_ANY, 0xffffffff,
+                                             dp.ofproto.OFPP_ANY,
+                                             dp.ofproto.OFPG_ANY,
                                              0, match, [])
 
         dp.send_msg(m)
@@ -90,12 +89,11 @@ class TestFlowBase(app_manager.RyuApp):
             match = dp.ofproto_parser.OFPMatch(dp.ofproto.OFPFW_ALL,
                                                0, 0, 0, 0, 0,
                                                0, 0, 0, 0, 0, 0, 0)
-            m = dp.ofproto_parser.OFPFlowStatsRequest(
-                                             dp, 0, match,
-                                             0, dp.ofproto.OFPP_NONE)
+            m = dp.ofproto_parser.OFPFlowStatsRequest(dp, 0, match,
+                                                      0, dp.ofproto.OFPP_NONE)
         elif dp.ofproto == ofproto_v1_2:
             match = dp.ofproto_parser.OFPMatch()
-            m = dp.ofproto_parser.OFPFlowStatsRequest(dp, 0,
+            m = dp.ofproto_parser.OFPFlowStatsRequest(dp, dp.ofproto.OFPTT_ALL,
                                                       dp.ofproto.OFPP_ANY,
                                                       dp.ofproto.OFPG_ANY,
                                                       0, 0, match)
@@ -116,10 +114,13 @@ class TestFlowBase(app_manager.RyuApp):
             dp.send_barrier()
             self.send_flow_stats(dp)
         else:
-            LOG.info("TEST_RESULTS:")
-            for t, r in self.results.items():
-                LOG.info("    %s: %s", t, r)
-            LOG.info(LOG_TEST_FINISH, self.unclear == 0)
+            self.print_results()
+
+    def print_results(self):
+        LOG.info("TEST_RESULTS:")
+        for t in sorted(self.results.keys()):
+            LOG.info("    %s: %s", t, self.results[t])
+        LOG.info(LOG_TEST_FINISH, self.unclear == 0)
 
     @handler.set_ev_cls(ofp_event.EventOFPFlowStatsReply,
                         handler.MAIN_DISPATCHER)
@@ -141,7 +142,7 @@ class TestFlowBase(app_manager.RyuApp):
             verify_func = getattr(self, v)
 
         result = verify_func(dp, msg.body)
-        if result == True:
+        if result is True:
             self.unclear -= 1
 
         self.results[self.current] = result

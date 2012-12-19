@@ -33,6 +33,7 @@ from ryu.app import wsgi
 from ryu.base.app_manager import AppManager
 from ryu.controller import controller
 from ryu.controller import flowvisor_cli
+from ryu.controller import api_db
 
 FLAGS = gflags.FLAGS
 gflags.DEFINE_bool('version', False, 'output version information and exit')
@@ -50,6 +51,9 @@ def main():
         sys.exit(0)
 
     log.init_log()
+
+    # always enable ofp for now.
+    FLAGS.app_lists += ['ryu.controller.ofp_handler']
 
     if len(args) > 1:
         FLAGS.app_lists += args[1:]

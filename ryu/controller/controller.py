@@ -68,7 +68,7 @@ def _deactivate(method):
         except greenlet.GreenletExit:
             pass
         except:
-            traceback.print_stack()
+            traceback.print_exc()
             raise
         finally:
             self.is_active = False
@@ -81,7 +81,7 @@ class Datapath(object):
                                    ofproto_v1_0_parser),
         ofproto_v1_2.OFP_VERSION: (ofproto_v1_2,
                                    ofproto_v1_2_parser),
-        }
+    }
 
     def __init__(self, socket, address):
         super(Datapath, self).__init__()
