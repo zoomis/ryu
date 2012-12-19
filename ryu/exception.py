@@ -76,6 +76,10 @@ class BondNetworkMismatch(RyuException):
     message = "Port's network id does not match network id for bond %(bond_id)s"
 
 
+class BondDatpathMismatch(RyuException):
+    message = "Bond %(bond_id)s does not belong in datapath with ID %(dpid)"
+
+
 class BondPortNotFound(RyuException):
     message = 'No such port (%(dpid)s, %(port)s) in bond %(bond_id)s'
 

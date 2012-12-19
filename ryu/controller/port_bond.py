@@ -16,7 +16,7 @@
 # limitations under the License.
 
 import logging
-from ryu.exception import BondAlreadyExist, BondNetworkMismatch, BondPortNotFound
+from ryu.exception import BondAlreadyExist, BondNetworkMismatch, BondDatpathMismatch, BondPortNotFound
 from ryu.exception import PortNotFound
 
 LOG = logging.getLogger('ryu.controller.port_bond')
@@ -32,11 +32,13 @@ LOG = logging.getLogger('ryu.controller.port_bond')
 class PortBond(object):
     def __init__(self, nw=None):
         self.bonds = {} # Key = bond_id, Value = [(dpid, port), ...]
-        self.bond2net = {} # Key = bond_id, Value = Network UUID
+        self.bond2dpid = {} # Key = bond_id, Value = dpid
         self.portCount = {} # Key = bond_id, Value = # Ports in bond
         self.nextPortIdx = {} # Key = bond_id, Value = Index for the list
                               #  returned by self.bonds
+        self.globalID = 0 # Global incremental counter
         self.nw = nw
+        self.bond2net = {} # Key = bond_id, Value = Network UUID
 
     # Link PortBond object to a Network class object
     # Returns nothing
@@ -57,20 +59,28 @@ class PortBond(object):
 
     # Registers a new bond_id
     # Optional: Associate the bond with a network_id
-    # Returns nothing on success; Raises exception on error
-    def create_bond(self, bond_id, network_id=None):
+    # Returns bond_id on success; Raises exception on error
+    def create_bond(self, dpid, network_id=None):
+        self.globalID += 1
+        # Prepend dpid just for clarity on where the bond is; Could just use ID
+        bond_id = hex(dpid) + "_" + str(self.globalID)
+        
         if bond_id in self.bonds:
             raise BondAlreadyExist(bond_id=bond_id)
 
+        self.bond2dpid[bond_id] = dpid
         self.bonds[bond_id] = []
         self.portCount[bond_id] = 0
         if self.nw:
             self.bond2net[bond_id] = network_id
 
+        return bond_id
+
     # Deletes a bond, if it exists, given a bond_id
     # Returns nothing
     def delete_bond(self, bond_id):
         if bond_id in self.bonds:
+            del self.bond2dpid[bond_id]
             del self.bonds[bond_id]
             del self.portCount[bond_id]
             del self.nextPortIdx[bond_id]
@@ -87,6 +97,10 @@ class PortBond(object):
                 #   port being added belongs to same network
                 if self.nw.get_network(dpid, port) != self.bond2net[bond_id]:
                     raise BondNetworkMismatch(bond_id=bond_id)
+
+            # Check if bond belongs in same dpid as port
+            if self.bond2dpid[bond_id] != dpid:
+                raise BondDatpathMismatch(bond_id=bond_id, dpid=dpid)
 
             if (dpid, port) not in self.bonds[bond_id]:
                 self.bonds[bond_id].append((dpid, port))
@@ -128,10 +142,8 @@ class PortBond(object):
         if dpid:
             bonds_dpid = set()
             for bond_id in bonds:
-                if len(self.bonds[bond_id]) > 0:
-                    datapath_id, port = self.bonds[bond_id][0]
-                    if datapath_id != dpid:
-                        bonds_dpid.add(bond_id)
+                if self.bond2dpid[bond_id] != dpid:
+                    bonds_dpid.add(bond_id)
 
             bonds -= bonds_dpid
 

@@ -76,6 +76,11 @@ class SimpleIsolation(app_manager.RyuApp):
     def _install_modflow(self, msg, src, dst, actions):
         datapath = msg.datapath
         ofproto = datapath.ofproto
+        if len(actions) > 0:
+            act = "out to " + str(actions[0].port)
+        else:
+            act = "drop"
+        print "installing flow from port %s, src %s to dst %s, action %s" % (msg.in_port, haddr_to_str(src), haddr_to_str(dst), act)
 
         # install flow
         rule = nx_match.ClsRule()
@@ -92,33 +97,43 @@ class SimpleIsolation(app_manager.RyuApp):
     # Creates the appropriate action lists and installs the flows
     # Returns the list of action(s) it installed
     def _install_unicast_flow(self, msg, src, dst, out_port):
-        orig_in_port = msg.in_port
         datapath = msg.datapath
 
         in_bond_id = self.port_bond.get_bond_id(datapath.id, msg.in_port)
         out_bond_id = self.port_bond.get_bond_id(datapath.id, out_port)
         if in_bond_id == out_bond_id and (in_bond_id or out_bond_id):
             self._modflow_and_drop_packet(msg, src, dst)
-            return
+            return []
+
+        if out_bond_id:
+            # Choose output port based on round-robin
+            out_port = self.port_bond.get_out_port(out_bond_id)
+
+            orig_in_port = msg.in_port
+            # Prevent potential loopbacks if downstream ports not bonded in switch
+            # Install a drop rule for each port in bond
+            for dpid, port in self.port_bond.ports_in_bond(out_bond_id):
+                msg.in_port = port
+                self._install_modflow(msg, src, dst, [])
+
+            # Replace msg.in_port with original
+            msg.in_port = orig_in_port
 
         if in_bond_id:
+            orig_in_port = msg.in_port
+
             # Install flow for each input port in bond
             for dpid, port in self.port_bond.ports_in_bond(in_bond_id):
-                if out_bond_id:
-                    # Choose output port based on round-robin
-                    out_port = self.port_bond.get_out_port(out_bond_id)
-
                 msg.in_port = port
                 actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
                 self._install_modflow(msg, src, dst, actions)
+
+            # Replace msg.in_port with original
+            msg.in_port = orig_in_port
         else:
-            if out_bond_id:
-                out_port = self.port_bond.get_out_port(out_bond_id)
             actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
             self._install_modflow(msg, src, dst, actions)
 
-        # In case of multiple outputs, replace msg.in_port with original
-        msg.in_port = orig_in_port
         return actions
 
     def _forward_to_nw_id(self, msg, src, dst, nw_id, out_port):
@@ -136,12 +151,13 @@ class SimpleIsolation(app_manager.RyuApp):
 
         # Install unicast flows and retrieve resulting actions list
         actions = self._install_unicast_flow(msg, src, dst, out_port)
-        LOG.debug("learned dpid %s in_port %d out_port %d src %s dst %s",
-                  datapath.id, msg.in_port, actions[0].port,
-                  haddr_to_str(src), haddr_to_str(dst))
+        if len(actions) > 0:
+            LOG.debug("learned dpid %s in_port %d out_port %d src %s dst %s",
+                      datapath.id, msg.in_port, actions[0].port,
+                      haddr_to_str(src), haddr_to_str(dst))
 
+            print "actually sent out to port %s" % actions[0].port
         datapath.send_packet_out(msg.buffer_id, msg.in_port, actions)
-        print "actually sent out to port %s" % actions[0].port
 
     # Given an input port, datapath ID, and network ID, return
     #   a list of valid output ports
@@ -177,12 +193,24 @@ class SimpleIsolation(app_manager.RyuApp):
 
         out_port_list = self._get_all_out_ports(datapath.id, msg.in_port,
                                                     nw_id, NW_ID_EXTERNAL)
+        print "out port list %s" % out_port_list
 
         for port_no in out_port_list:
             LOG.debug("port_no %s", port_no)
             actions.append(datapath.ofproto_parser.OFPActionOutput(port_no))
 
-        in_bond_id = self.port_bond.get_bond_id(datapath.id, msg.in_port)
+            # Prevent potential loopbacks if downstream ports not bonded in switch
+            out_bond_id = self.port_bond.get_bond_id(datapath.id, port_no)
+            if out_bond_id:
+                # Install a drop rule for each port in bond
+                for dpid, port in self.port_bond.ports_in_bond(out_bond_id):
+                    msg.in_port = port
+                    self._install_modflow(msg, src, dst, [])
+
+                # Replace msg.in_port with original
+                msg.in_port = in_port
+
+        in_bond_id = self.port_bond.get_bond_id(datapath.id, in_port)
         if in_bond_id:
             # Install a flow for each port in bond
             for dpid, port in self.port_bond.ports_in_bond(in_bond_id):

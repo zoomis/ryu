@@ -416,14 +416,14 @@ class PortBondController(ControllerBase):
         body = json.dumps(self.port_bond.list_bonds())
         return Response(status=200, content_type='application/json', body=body)
 
-    def create_bond(self, req, bond_id, network_id):
+    def create_bond(self, req, dpid, network_id):
         try:
-            self.port_bond.create_bond(bond_id, network_id)
+            body = json.dumps(self.port_bond.create_bond(int(dpid, 16), network_id))
         except BondAlreadyExist:
             body = "Bond ID already exists"
             return Response(status=409, body=body)
 
-        return Response(status=200)
+        return Response(status=200, content_type='application/json', body=body)
 
     def delete_bond(self, req, bond_id):
         self.port_bond.delete_bond(bond_id)
@@ -592,7 +592,7 @@ class restapi(app_manager.RyuApp):
                        controller=PortBondController, action='list_bonds',
                        conditions=dict(method=['GET']))
 
-        mapper.connect('port_bond', uri + '/{bond_id}_{network_id}',
+        mapper.connect('port_bond', uri + '/{dpid}_{network_id}',
                        controller=PortBondController, action='create_bond',
                        conditions=dict(method=['POST']))
     
