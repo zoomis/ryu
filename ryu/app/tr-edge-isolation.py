@@ -436,12 +436,12 @@ class SimpleIsolation(app_manager.RyuApp):
         if broadcast or out_port is None:
             out_port_list = []
             for dpid, port in self.nw.list_ports(NW_ID_PXE_CTRL):
-                if port is not msg.in_port and dpid is datapath.id:
+                if port != msg.in_port and dpid == datapath.id:
                     out_port_list.append(port)
 
             if src_nw_id == NW_ID_PXE_CTRL:
                 for dpid, port in self.nw.list_ports(NW_ID_PXE):
-                    if port is not msg.in_port and dpid is datapath.id:
+                    if port != msg.in_port and dpid == datapath.id:
                         out_port_list.append(port)
 
             for port in out_port_list:
@@ -467,12 +467,12 @@ class SimpleIsolation(app_manager.RyuApp):
         if broadcast or out_port is None:
             out_port_list = []
             for dpid, port in self.nw.list_ports(NW_ID_MGMT_CTRL):
-                if port is not msg.in_port and dpid is datapath.id:
+                if port !=  msg.in_port and dpid == datapath.id:
                     out_port_list.append(port)
 
             if src_nw_id == NW_ID_MGMT_CTRL:
                 for dpid, port in self.nw.list_ports(NW_ID_MGMT):
-                    if port is not msg.in_port and dpid is datapath.id:
+                    if port != msg.in_port and dpid == datapath.id:
                         out_port_list.append(port)
 
             for port in out_port_list:
