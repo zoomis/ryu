@@ -186,8 +186,14 @@ class PortController(ControllerBase):
 
     def create(self, req, network_id, dpid, port_id, **_kwargs):
         try:
-            self.nw.create_port(network_id, int(dpid, 16), int(port_id))
-            self.api_db.createPort(network_id, dpid, port_id)
+            datapath_id = int(dpid, 16)
+            port = int(port_id)
+            if not self.nw.same_network(datapath_id, NW_ID_EXTERNAL, port):
+                self.nw.create_port(network_id, datapath_id, port_id)
+                self.api_db.createPort(network_id, dpid, port_id)
+            else:
+                # If a port has been registered as external, leave it be
+                pass
         except NetworkNotFound:
             return Response(status=404)
         except PortAlreadyExist:
@@ -435,7 +441,7 @@ class PortBondController(ControllerBase):
             self.port_bond.add_port(bond_id, int(dpid, 16), int(port))
         except BondNetworkMismatch:
             body = "Bond's network ID does not match port's network ID"
-            return Response(status=200, body=body)
+            return Response(status=403, body=body)
 
         return Response(status=200)
 

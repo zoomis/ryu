@@ -73,19 +73,22 @@ class SimpleIsolation(app_manager.RyuApp):
         self.mac2port.dpid_add(ev.msg.datapath_id)
         self.nw.add_datapath(ev.msg)
 
-    def _install_modflow(self, msg, src, dst, actions):
+    def _install_modflow(self, msg, src, dst=None, actions=None):
         datapath = msg.datapath
         ofproto = datapath.ofproto
-        if len(actions) > 0:
-            act = "out to " + str(actions[0].port)
-        else:
-            act = "drop"
-        print "installing flow from port %s, src %s to dst %s, action %s" % (msg.in_port, haddr_to_str(src), haddr_to_str(dst), act)
+        #if len(actions) > 0:
+        #    act = "out to " + str(actions[0].port)
+        #else:
+        #    act = "drop"
+        #print "installing flow from port %s, src %s to dst %s, action %s" % (msg.in_port, haddr_to_str(src), haddr_to_str(dst), act)
+        if actions is None:
+            actions = []
 
         # install flow
         rule = nx_match.ClsRule()
         rule.set_in_port(msg.in_port)
-        rule.set_dl_dst(dst)
+        if dst is not None:
+            rule.set_dl_dst(dst)
         rule.set_dl_src(src)
         datapath.send_flow_mod(
             rule=rule, cookie=0, command=datapath.ofproto.OFPFC_ADD,
@@ -114,7 +117,7 @@ class SimpleIsolation(app_manager.RyuApp):
             # Install a drop rule for each port in bond
             for dpid, port in self.port_bond.ports_in_bond(out_bond_id):
                 msg.in_port = port
-                self._install_modflow(msg, src, dst, [])
+                self._install_modflow(msg, src, None, [])
 
             # Replace msg.in_port with original
             msg.in_port = orig_in_port
@@ -205,7 +208,7 @@ class SimpleIsolation(app_manager.RyuApp):
                 # Install a drop rule for each port in bond
                 for dpid, port in self.port_bond.ports_in_bond(out_bond_id):
                     msg.in_port = port
-                    self._install_modflow(msg, src, dst, [])
+                    self._install_modflow(msg, src, None, [])
 
                 # Replace msg.in_port with original
                 msg.in_port = in_port
@@ -256,7 +259,7 @@ class SimpleIsolation(app_manager.RyuApp):
         msg = ev.msg
         datapath = msg.datapath
         ofproto = datapath.ofproto
-        print "packet in from port %s of dpid %s" % (msg.in_port, datapath.id)
+        print "packet in from port %s of dpid %s" % (msg.in_port, hex(datapath.id))
 
         dst, src, _eth_type = struct.unpack_from('!6s6sH', buffer(msg.data), 0)
 
@@ -559,7 +562,7 @@ class SimpleIsolation(app_manager.RyuApp):
             if broadcast:
                 # If broadcasting, write mod flow into switch
                 if in_bond_id:
-                    for port in self.port_bond.get_ports_in_bond(in_bond_id):
+                    for dpid, port in self.port_bond.ports_in_bond(in_bond_id):
                         msg.in_port = port
                         self._install_modflow(msg, src, dst, actions)
                 else:
@@ -592,7 +595,8 @@ class SimpleIsolation(app_manager.RyuApp):
 
             if broadcast:
                 # If broadcasting, write mod flow into switch
-                self._modflow_and_send_packet(msg, src, dst, actions)
+                self._install_modflow(msg, src, dst, actions)
+                datapath.send_packet_out(msg.buffer_id, msg.in_port, actions)
             else:
                 # Simply flooding; Don't bother with mod flow
                 datapath.send_packet_out(msg.buffer_id, msg.in_port, actions)
@@ -602,6 +606,7 @@ class SimpleIsolation(app_manager.RyuApp):
                 actions.append(datapath.ofproto_parser.OFPActionOutput(out_port))
 
             # Installs rule to drop if actions list is empty
-            self._modflow_and_send_packet(msg, src, dst, actions)
+            self._install_modflow(msg, src, dst, actions)
+            datapath.send_packet_out(msg.buffer_id, msg.in_port, actions)
 
 
