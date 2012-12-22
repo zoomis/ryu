@@ -189,7 +189,7 @@ class PortController(ControllerBase):
             datapath_id = int(dpid, 16)
             port = int(port_id)
             if not self.nw.same_network(datapath_id, NW_ID_EXTERNAL, port):
-                self.nw.create_port(network_id, datapath_id, port_id)
+                self.nw.create_port(network_id, datapath_id, port)
                 self.api_db.createPort(network_id, dpid, port_id)
             else:
                 # If a port has been registered as external, leave it be
@@ -436,30 +436,30 @@ class PortBondController(ControllerBase):
 
         return Response(status=200)
 
-    def add_port(self, req, bond_id, dpid, port):
+    def add_port(self, req, bond_id, port):
         try:
-            self.port_bond.add_port(bond_id, int(dpid, 16), int(port))
+            self.port_bond.add_port(bond_id, int(port))
         except BondNetworkMismatch:
-            body = "Bond's network ID does not match port's network ID"
+            body = "Bond's network ID does not match port's network ID\n"
             return Response(status=403, body=body)
 
         return Response(status=200)
 
-    def del_port(self, req, bond_id, dpid, port):
+    def del_port(self, req, bond_id, port):
         try:
-            self.port_bond.del_port(bond_id, int(dpid, 16), int(port))
+            self.port_bond.del_port(bond_id, int(port))
         except BondPortNotFound:
-            body = "Port not found in bond"
+            body = "Port not found in bond\n"
             return Response(status=404, body=body)
 
         return Response(status=200)
 
     def list_ports(self, req, bond_id):
         body = self.port_bond.ports_in_bond(bond_id)
-        if body:
+        if body is not None: # Explicitly use 'None' as body can be an empty list
             body = json.dumps(body)
         else:
-            body = json.dumps([])
+            body = "Bond does not exist\n"
 
         return Response(status=200, content_type='application/json', body=body)
 
@@ -606,11 +606,11 @@ class restapi(app_manager.RyuApp):
                        controller=PortBondController, action='delete_bond',
                        conditions=dict(method=['DELETE']))
 
-        mapper.connect('port_bond', uri + '/{bond_id}/{dpid}_{port}',
+        mapper.connect('port_bond', uri + '/{bond_id}/{port}',
                        controller=PortBondController, action='add_port',
                        conditions=dict(method=['PUT']))
 
-        mapper.connect('port_bond', uri + '/{bond_id}/{dpid}_{port}',
+        mapper.connect('port_bond', uri + '/{bond_id}/{port}',
                        controller=PortBondController, action='del_port',
                        conditions=dict(method=['DELETE']))
 
