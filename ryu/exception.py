@@ -72,6 +72,10 @@ class BondAlreadyExist(RyuException):
     message = 'Bond id %(bond_id)s already exists'
 
 
+class BondNotFound(RyuException):
+    message = 'No such bond with id %(bond_id)s found'
+
+
 class BondNetworkMismatch(RyuException):
     message = "Port's network id does not match network id for bond %(bond_id)s"
 
@@ -79,5 +83,8 @@ class BondNetworkMismatch(RyuException):
 class BondPortNotFound(RyuException):
     message = 'Port number %(port)s does not exist in bond %(bond_id)s'
 
+
+class BondPortAlreadyBonded(RyuException):
+    message = 'Port number %(port)s already exists in bond %(bond_id)s'
 
 

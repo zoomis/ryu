@@ -30,7 +30,7 @@ from ryu.controller import api_db
 from ryu.controller import port_bond
 from ryu.exception import NetworkNotFound, NetworkAlreadyExist
 from ryu.exception import PortNotFound, PortAlreadyExist, PortUnknown
-from ryu.exception import BondAlreadyExist, BondNetworkMismatch, BondPortNotFound
+from ryu.exception import BondAlreadyExist, BondNotFound, BondNetworkMismatch, BondPortNotFound, BondPortAlreadyBonded
 from ryu.app.wsgi import ControllerBase, WSGIApplication
 from ryu.exception import MacAddressDuplicated, MacAddressNotFound
 from ryu.lib.mac import is_multicast, haddr_to_str, haddr_to_bin
@@ -415,8 +415,10 @@ class PortBondController(ControllerBase):
     def __init__(self, req, link, data, **config):
         super(PortBondController, self).__init__(req, link, data, **config)
         self.port_bond = data.get('port_bond')
+        self.api_db = data.get('api_db')
 
         assert self.port_bond is not None
+        assert self.api_db is not None
 
     def list_bonds(self, req):
         body = json.dumps(self.port_bond.list_bonds())
@@ -424,7 +426,9 @@ class PortBondController(ControllerBase):
 
     def create_bond(self, req, dpid, network_id):
         try:
-            body = json.dumps(self.port_bond.create_bond(int(dpid, 16), network_id))
+            bond_id = self.port_bond.create_bond(int(dpid, 16), network_id)
+            body = json.dumps(bond_id)
+            self.api_db.createBond(bond_id, dpid, network_id)
         except BondAlreadyExist:
             body = "Bond ID already exists"
             return Response(status=409, body=body)
@@ -433,26 +437,37 @@ class PortBondController(ControllerBase):
 
     def delete_bond(self, req, bond_id):
         self.port_bond.delete_bond(bond_id)
+        self.api_db.deleteBond(bond_id)
 
         return Response(status=200)
 
     def add_port(self, req, bond_id, port):
         try:
             self.port_bond.add_port(bond_id, int(port))
+            self.api_db.addPort_bond(bond_id, port)
         except BondNetworkMismatch:
             body = "Bond's network ID does not match port's network ID\n"
-            return Response(status=403, body=body)
+        except PortNotFound, BondPortAlreadyBonded:
+            body = "Unavailable port (Port does not exist or port already bonded)\n"
+        except BondNotFound:
+            body = "Bond ID not found\n"
+        else:
+            return Response(status=200)
 
-        return Response(status=200)
+        return Response(status=403, body=body)
 
     def del_port(self, req, bond_id, port):
         try:
             self.port_bond.del_port(bond_id, int(port))
+            self.api_db.deletePort_bond(bond_id, port)
         except BondPortNotFound:
             body = "Port not found in bond\n"
-            return Response(status=404, body=body)
+        except BondNotFound:
+            body = "Bond ID not found \n"
+        else:
+            return Response(status=200)
 
-        return Response(status=200)
+        return Response(status=404, body=body)
 
     def list_ports(self, req, bond_id):
         body = self.port_bond.ports_in_bond(bond_id)
@@ -539,6 +554,7 @@ class restapi(app_manager.RyuApp):
                        controller=NetworkController, action='del_iface',
                        conditions=dict(method=['DELETE']))
 
+        # PortController related APIs
         wsgi.registory['PortController'] = {'nw' : self.nw,
                                             'fv_cli' : self.fv_cli,
                                             'mac2port' : self.mac2port,
@@ -590,7 +606,8 @@ class restapi(app_manager.RyuApp):
                        conditions=dict(method=['PUT']))
 
         # Port Bonding related APIs
-        wsgi.registory['PortBondController'] = {'port_bond': self.port_bond}
+        wsgi.registory['PortBondController'] = {'port_bond': self.port_bond,
+                                                'api_db' : self.api_db      }
         self.port_bond.setNetworkObjHandle(self.nw)
 
         uri = '/v1.0/port_bond'
@@ -625,12 +642,21 @@ class restapi(app_manager.RyuApp):
         networks = self.api_db.getNetworks()
         ports = self.api_db.getPorts()
         macs = self.api_db.getMACs()
+        bonds = self.api_db.getBonds()
 
         for network_id in networks:
             self.nw.create_network(network_id)
 
-        for (network_id, dpid, port_num) in ports:
+        for (bond_id, dpid, network_id) in bonds:
+            self.port_bond.create_bond(int(dpid, 16), network_id, bond_id)
+
+        for (network_id, dpid, port_num, bond_id) in ports:
             self.nw.create_port(network_id, int(dpid, 16), int(port_num))
+            if bond_id:
+                self.port_bond.add_port(bond_id, int(port_num))
 
         for (network_id, mac_address) in macs:
             self.mac2net.add_mac(haddr_to_bin(mac_address), network_id, NW_ID_EXTERNAL)
+
+
+

@@ -19,10 +19,12 @@ import logging
 import gflags
 
 from ryu.exception import NetworkNotFound, NetworkAlreadyExist
-from ryu.exception import PortAlreadyExist, PortNotFound, PortUnknown
+from ryu.exception import PortAlreadyExist, PortNotFound
 from ryu.exception import MacAddressDuplicated, MacAddressNotFound
-#from ryu.app.rest_nw_id import NW_ID_UNKNOWN, NW_ID_EXTERNAL
+from ryu.exception import BondPortAlreadyBonded, BondAlreadyExist, BondPortNotFound, BondNotFound
 from sqlalchemy.ext.sqlsoup import SqlSoup
+from sqlalchemy import create_engine, MetaData
+from sqlalchemy import Table, Column, Integer, String
 from sqlalchemy import and_
 
 LOG = logging.getLogger('ryu.controller.api_db')
@@ -35,10 +37,46 @@ gflags.DEFINE_string('api_db_url', 'mysql://root:iheartdatabases@'+ \
 # Can be re-loaded if controller crashes
 class API_DB(object):
     def __init__(self):
+        # Create any tables that don't already exist
+        self.createTables()
+
         self.db = SqlSoup(FLAGS.api_db_url)
         self.db_nets = self.db.networks
         self.db_ports = self.db.ports
         self.db_macs = self.db.macs
+        self.db_bonds = self.db.bonds
+
+    def createTables(self):
+        engine = create_engine(FLAGS.api_db_url)
+        data = MetaData(bind=engine)
+        data.reflect()
+        existing_tables = data.tables.keys()
+
+        if "networks" not in existing_tables:
+            Table('networks', data,
+                    Column('network_id', String(255), primary_key=True))
+
+        if "ports" not in existing_tables:
+            Table('ports', data,
+                    Column('id', Integer, primary_key=True, autoincrement=True),
+                    Column('port_num', Integer),
+                    Column('datapath_id', String(255)),
+                    Column('network_id', String(255)),
+                    Column('bond_id', String(255)))
+
+        if "macs" not in existing_tables:
+            Table('macs', data,
+                    Column('id', Integer, primary_key=True, autoincrement=True),
+                    Column('network_id', String(255)),
+                    Column('mac_address', String(255)))
+
+        if "bonds" not in existing_tables:
+            Table('bonds', data,
+                    Column('bond_id', String(255), primary_key=True),
+                    Column('datapath_id', String(255)),
+                    Column('network_id', String(255)))
+
+        data.create_all()
 
     ###########################################################################
     # Functions for retrieving database contents
@@ -53,7 +91,7 @@ class API_DB(object):
     def getPorts(self):
         port_list = []
         for port in self.db_ports.all():
-            port_list.append((port.network_id, port.datapath_id, port.port_num))
+            port_list.append((port.network_id, port.datapath_id, port.port_num, port.bond_id))
 
         return port_list
 
@@ -63,6 +101,13 @@ class API_DB(object):
             mac_list.append((mac.network_id, mac.mac_address))
 
         return mac_list
+
+    def getBonds(self):
+        bond_list = []
+        for bond in self.db_bonds.all():
+            bond_list.append((bond.bond_id, bond.datapath_id, bond.network_id))
+
+        return bond_list
 
     ###########################################################################
     # Functions for storing API calls into the database
@@ -144,6 +189,77 @@ class API_DB(object):
                                 dpid=dpid, port=port_num)
 
         self.db.commit()
+
+    def createBond(self, bond_id, dpid, network_id):
+        # Check for existing entry
+        if not self.db_bonds.get(bond_id):
+            self.db_bonds.insert(bond_id=bond_id, datapath_id=dpid, network_id=network_id)
+        else:
+            raise BondAlreadyExist(bond_id=bond_id)
+
+        self.db.commit()
+
+    def deleteBond(self, bond_id):
+        entry = self.db_bonds.get(bond_id)
+
+        if entry:
+            self.db.delete(entry)
+        else:
+            # Do nothing
+            pass
+
+        # Delete any ports currently bonded to the bond_id
+        for port in self.db_ports.all():
+            if port.bond_id == bond_id:
+                port.bond_id = None
+
+        self.db.commit()
+
+    def addPort_bond(self, bond_id, port_num):
+        bondEntry = self.db_bonds.get(bond_id)
+        if bondEntry:
+            dpid = bondEntry.datapath_id
+            network_id = bondEntry.network_id
+        else:
+            raise BondNotFound(bond_id=bond_id)
+
+        params = and_(self.db_ports.datapath_id==dpid,
+                        self.db_ports.network_id==network_id,
+                        self.db_ports.port_num==port_num)
+        entry = self.db_ports.filter(params).first()
+
+        if entry:
+            # Check for existing entry
+            old_bond_id = entry.bond_id
+            if not old_bond_id:
+                entry.bond_id = bond_id
+            else:
+                raise BondPortAlreadyBonded(port=port_num, bond_id=old_bond_id)
+        else:
+            raise PortNotFound(network_id=network_id,
+                                dpid=dpid, port=port_num)
+
+        self.db.commit()
+
+    def deletePort_bond(self, bond_id, port_num):
+        bondEntry = self.db_bonds.get(bond_id)
+        if bondEntry:
+            dpid = bondEntry.datapath_id
+        else:
+            raise BondNotFound(bond_id=bond_id)
+
+        params = and_(self.db_ports.datapath_id==dpid,
+                        self.db_ports.port_num==port_num,
+                        self.db_ports.bond_id==bond_id)
+        entry = self.db_ports.filter(params).first()
+
+        if entry:
+            entry.bond_id = None
+        else:
+            raise BondPortNotFound(port=port_num, bond_id=bond_id)
+
+        self.db.commit()
+
 
     # TO DO: FlowVisor APIs
 

@@ -16,7 +16,7 @@
 # limitations under the License.
 
 import logging
-from ryu.exception import BondAlreadyExist, BondNetworkMismatch, BondPortNotFound
+from ryu.exception import BondAlreadyExist, BondNotFound, BondNetworkMismatch, BondPortNotFound, BondPortAlreadyBonded
 from ryu.exception import PortNotFound, PortUnknown
 
 LOG = logging.getLogger('ryu.controller.port_bond')
@@ -57,13 +57,16 @@ class PortBond(object):
 
         return port
 
-    # Registers a new bond_id
+    # Registers a new bond
     # Optional: Associate the bond with a network_id
+    # Optional: Associate the bond with a given bond_id
+    #           If not provided, one will be created for the caller
     # Returns bond_id on success; Raises exception on error
-    def create_bond(self, dpid, network_id=None):
-        self.globalID += 1
-        # Prepend dpid just for clarity on where the bond is; Could just use ID
-        bond_id = hex(dpid) + "_" + str(self.globalID)
+    def create_bond(self, dpid, network_id=None, bond_id=None):
+        if not bond_id:
+            self.globalID += 1
+            # Prepend dpid just for clarity on where the bond is; Could just use ID
+            bond_id = hex(dpid) + "_" + str(self.globalID)
         
         if bond_id in self.bonds:
             raise BondAlreadyExist(bond_id=bond_id)
@@ -71,6 +74,7 @@ class PortBond(object):
         self.bond2dpid[bond_id] = dpid
         self.bonds[bond_id] = []
         self.portCount[bond_id] = 0
+        self.nextPortIdx[bond_id] = 0
         if self.nw:
             self.bond2net[bond_id] = network_id
 
@@ -101,13 +105,22 @@ class PortBond(object):
                     if self.nw.get_network(dpid, port) != self.bond2net[bond_id]:
                         raise BondNetworkMismatch(bond_id=bond_id)
                 except PortUnknown:
-                    raise
+                    raise PortNotFound(dpid=dpid, port=port,
+                                        network_id=self.bond2net[bond_id])
+
+            # Check if port already bonded
+            bonds = self.list_bonds(dpid)
+            for bond in bonds:
+                if bond != bond_id and port in self.bonds[bond]:
+                    raise BondPortAlreadyBonded(port=port, bond_id=bond)
 
             if port not in self.bonds[bond_id]:
                 self.bonds[bond_id].append(port)
                 self.portCount[bond_id] += 1
                 if self.portCount[bond_id] == 1:
                     self.nextPortIdx[bond_id] = 0
+        else:
+            raise BondNotFound(bond_id=bond_id)
 
     # De-registers a port from a bond
     # Returns nothing on success; Raises exception on error
@@ -120,6 +133,8 @@ class PortBond(object):
                     self.nextPortIdx[bond_id] -= 1
             except ValueError:
                 raise BondPortNotFound(port=port, bond_id=bond_id)
+        else:
+            raise BondNotFound(bond_id=bond_id)
 
     # Returns bond_id given a (dpid, port) pair
     # Function doubles as an "is_port_bonded" boolean function
