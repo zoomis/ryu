@@ -32,6 +32,7 @@ from ryu.controller import network
 from ryu.controller import ofp_event
 from ryu.controller import flowvisor_cli
 from ryu.controller import port_bond
+from ryu.controller import api_db
 from ryu.controller.handler import MAIN_DISPATCHER
 from ryu.controller.handler import CONFIG_DISPATCHER
 from ryu.controller.handler import set_ev_cls
@@ -50,7 +51,8 @@ class SimpleIsolation(app_manager.RyuApp):
         'fv_cli': flowvisor_cli.FlowVisor_CLI,
         'mac2port': mac_to_port.MacToPortTable,
         'mac2net': mac_to_network.MacToNetwork,
-        'port_bond': port_bond.PortBond
+        'port_bond': port_bond.PortBond,
+        'api_db': api_db.API_DB
     }
 
     def __init__(self, *args, **kwargs):
@@ -61,6 +63,7 @@ class SimpleIsolation(app_manager.RyuApp):
         self.mac2net = kwargs['mac2net']
         self.fv_cli = kwargs['fv_cli']
         self.port_bond = kwargs['port_bond']
+        self.api_db = kwargs['api_db']
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -279,6 +282,7 @@ class SimpleIsolation(app_manager.RyuApp):
             try:
                 # allow external -> known nw id change
                 self.mac2net.add_mac(src, port_nw_id, NW_ID_EXTERNAL)
+                self.api_db.addMAC(port_nw_id, haddr_to_str(src))
             except MacAddressDuplicated:
                 LOG.warn('mac address %s is already in use.'
                          ' So (dpid %s, port %s) can not use it',
@@ -345,6 +349,7 @@ class SimpleIsolation(app_manager.RyuApp):
                                     sliceName, dpid, str(port), haddr_to_str(src))
                     else:
                         self.fv_cli.addFlowSpaceID(dpid, port, src, int(ret[9:]))
+                        self.api_db.addFlowSpaceID(hex(dpid), port, haddr_to_str(src), int(ret[9:]))
 
                 # Now install rule on source switch
                 ret = self.fv_cli.addFlowSpace(sliceName, datapath.id, msg.in_port, haddr_to_str(src))
@@ -354,6 +359,7 @@ class SimpleIsolation(app_manager.RyuApp):
                                 sliceName, dpid, str(port), haddr_to_str(src))
                 else:
                     self.fv_cli.addFlowSpaceID(datapath.id, msg.in_port, src, int(ret[9:]))
+                    self.api_db.addFlowSpaceID(hex(datapath.id), msg.in_port, haddr_to_str(src), int(ret[9:]))
 
             self._drop_packet(msg)
             return
@@ -437,6 +443,7 @@ class SimpleIsolation(app_manager.RyuApp):
                 self.mac2port.mac_del(dp.id, mac_)
 
             self.mac2net.del_mac(mac_)
+            self.api_db.delMAC(haddr_to_str(mac_))
 
         self.nw.port_deleted(datapath.id, port_no)
 
