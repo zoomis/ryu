@@ -18,6 +18,7 @@
 # limitations under the License.
 
 import json
+import sys
 from webob import Request, Response
 
 from ryu.base import app_manager
@@ -27,8 +28,10 @@ from ryu.controller import dpset
 from ryu.controller import mac_to_port
 from ryu.controller import mac_to_network
 from ryu.controller import api_db
+from ryu.controller import port_bond
 from ryu.exception import NetworkNotFound, NetworkAlreadyExist
 from ryu.exception import PortNotFound, PortAlreadyExist, PortUnknown
+from ryu.exception import BondAlreadyExist, BondNotFound, BondNetworkMismatch, BondPortNotFound, BondPortAlreadyBonded
 from ryu.app.wsgi import ControllerBase, WSGIApplication
 from ryu.exception import MacAddressDuplicated, MacAddressNotFound
 from ryu.lib.mac import is_multicast, haddr_to_str, haddr_to_bin
@@ -139,7 +142,7 @@ class NetworkController(ControllerBase):
             charMAC = haddr_to_bin(mac)
 
             self.mac2net.del_mac(charMAC)
-            self.api_db.delMAC(network_id, mac)
+            self.api_db.delMAC(mac)
         except MacAddressNotFound:
             return Response(status=404)
         else:
@@ -184,8 +187,14 @@ class PortController(ControllerBase):
 
     def create(self, req, network_id, dpid, port_id, **_kwargs):
         try:
-            self.nw.create_port(network_id, int(dpid, 16), int(port_id))
-            self.api_db.createPort(network_id, dpid, port_id)
+            datapath_id = int(dpid, 16)
+            port = int(port_id)
+            if not self.nw.same_network(datapath_id, NW_ID_EXTERNAL, port):
+                self.nw.create_port(network_id, datapath_id, port)
+                self.api_db.createPort(network_id, dpid, port_id)
+            else:
+                # If a port has been registered as external, leave it be
+                pass
         except NetworkNotFound:
             return Response(status=404)
         except PortAlreadyExist:
@@ -200,8 +209,18 @@ class PortController(ControllerBase):
             except PortUnknown:
                 old_network_id = None
 
-            self.fv_cli.updatePort(network_id, int(dpid, 16),
-                                    int(port_id), True, old_network_id)
+            # Updating an existing port whose network has changed
+            if self.fv_cli.getSliceName(old_network_id) or (old_network_id == NW_ID_EXTERNAL):
+                flowspace_ids = self.fv_cli.getFlowSpaceIDs(int(dpid,16), int(port_id))
+                for id in flowspace_ids:
+                    ret = self.fv_cli.removeFlowSpace(id)
+                    if (ret.find("success") != -1):
+                        self.fv_cli.delFlowSpaceID(id)
+                        self.api_db.delFlowSpaceID(id)
+                    else:
+                        # Error, how to handle?
+                        continue
+
             self.nw.update_port(network_id, int(dpid, 16), int(port_id))
             self.api_db.updatePort(network_id, dpid, port_id)
         except (NetworkNotFound, PortUnknown):
@@ -219,22 +238,42 @@ class PortController(ControllerBase):
 
     def delete(self, req, network_id, dpid, port_id, **_kwargs):
         try:
-            self.fv_cli.deletePort(network_id, int(dpid, 16), int(port_id))
-            
-            # Find MAC that was associated with port and remove any other
-            #    FlowSpace rules that may contain it
-            macList = self.mac2port.mac_list(int(dpid, 16), int(port_id))
-            for mac in macList:
-                flowspace_ids = self.fv_cli.getFlowSpaceIDs(None, None, mac)
+            if self.fv_cli.getSliceName(network_id) or (network_id == NW_ID_EXTERNAL):
+                try:
+                    flowspace_ids = self.fv_cli.getFlowSpaceIDs(int(dpid,16), int(port_id))
+                except PortUnknown:
+                    raise PortNotFound(dpid=dpid, port=port, network_id=network_id)
+                else:
+                    for id in flowspace_ids:
+                        ret = self.fv_cli.removeFlowSpace(id)
+                        if (ret.find("success") != -1):
+                            self.fv_cli.delFlowSpaceID(id)
+                            self.api_db.delFlowSpaceID(id)
+                        else:
+                            # Error, how to handle?
+                            continue
 
-                for id in flowspace_ids:
-                    ret = self.fv_cli.removeFlowSpace(id)
-                    if (ret.find("success") == -1):
-                        # Error, how to handle?
-                        pass
+                # Should we delete entries from the switch's flow table?
 
-                self.fv_cli.delFlowSpaceIDs(flowspace_ids)
-                    
+            # If network_id isn't external, assume the port is connected to one or
+            #   more hosts about to be deleted. Thus, delete their MACs from network.
+            # Once full topology is known, we can do an actual check
+            if network_id != NW_ID_EXTERNAL:
+                # Find MAC(s) that was associated with port and remove any other
+                #    FlowSpace rules that may contain it
+                macList = self.mac2port.mac_list(int(dpid, 16), int(port_id))
+                for mac in macList:
+                    flowspace_ids = self.fv_cli.getFlowSpaceIDs(None, None, mac)
+
+                    for id in flowspace_ids:
+                        ret = self.fv_cli.removeFlowSpace(id)
+                        if (ret.find("success") != -1):
+                            self.fv_cli.delFlowSpaceID(id)
+                            self.api_db.delFlowSpaceID(id)
+                        else:
+                            # Error, how to handle?
+                            continue
+
             self.nw.remove_port(network_id, int(dpid, 16), int(port_id))
             self.api_db.deletePort(network_id, dpid, port_id)
         except (NetworkNotFound, PortNotFound):
@@ -250,11 +289,15 @@ class FlowVisorController(ControllerBase):
         self.nw = data.get('nw')
         self.dpset = data.get('dpset')
         self.mac2port = data.get('mac2port')
+        self.mac2net = data.get('mac2net')
+        self.api_db = data.get('api_db')
 
         assert self.fv_cli is not None
         assert self.nw is not None
         assert self.dpset is not None
         assert self.mac2port is not None
+        assert self.mac2net is not None
+        assert self.api_db is not None
 
     def listSlices(self, req, **_kwargs):
         body = self.fv_cli.listSlices()
@@ -319,6 +362,9 @@ class FlowVisorController(ControllerBase):
             status = response.status_code
         
         if (status == 200) and (sliceName != self.fv_cli.defaultSlice):
+            self.fv_cli.slice2nw_add(sliceName, network_id)
+            self.api_db.assignNetToSlice(sliceName, network_id)
+
             # Install FV rules to route packets to controller
             for (dpid, port) in self.nw.list_ports(network_id):
                 for mac in self.mac2port.mac_list(dpid, port):
@@ -334,6 +380,7 @@ class FlowVisorController(ControllerBase):
                                 break
 
                             self.fv_cli.addFlowSpaceID(dpid2, port2, mac, int(body[9:]))
+                            self.api_db.addFlowSpaceID(hex(dpid2), port2, haddr_to_str(mac), int(body[9:]))
 
                         if (status == 500):
                             break
@@ -347,6 +394,7 @@ class FlowVisorController(ControllerBase):
 
                         # Keep track of installed rules related to network
                         self.fv_cli.addFlowSpaceID(dpid, port, mac, int(body[9:]))
+                        self.api_db.addFlowSpaceID(hex(dpid), port, haddr_to_str(mac), int(body[9:]))
                             
                 if (status == 500):
                     break
@@ -358,11 +406,8 @@ class FlowVisorController(ControllerBase):
 
         if (status == 500):
             # Error occured in the middle of installing rules
-            # Previously installed rules be deleted
+            # Delete previously installed rules
             self.unassignNetwork(req, network_id)
-
-        if (status == 200):
-            self.fv_cli.slice2nw_add(sliceName, network_id)
 
         return Response(status=status, content_type='application/json', body=body)
 
@@ -373,7 +418,7 @@ class FlowVisorController(ControllerBase):
         # Check if network has been assigned to a controller
         if self.fv_cli.getSliceName(network_id):
             # Remove FlowSpace rules associated with the network
-            macs = self.nw.mac2net.list_macs(network_id)
+            macs = self.mac2net.list_macs(network_id)
             if macs is not None:
                 for mac in macs:
                     flowspace_ids = self.fv_cli.getFlowSpaceIDs(None, None, mac)
@@ -384,7 +429,8 @@ class FlowVisorController(ControllerBase):
                             status = 500
                             break
 
-                        self.fv_cli.delFlowSpaceIDs(id)
+                        self.fv_cli.delFlowSpaceID(id)
+                        self.api_db.delFlowSpaceID(id)
             else:
                 status = 404
 
@@ -396,11 +442,80 @@ class FlowVisorController(ControllerBase):
 
             if (status == 200):
                 self.fv_cli.slice2nw_del(network_id)
+                self.api_db.removeNetFromSlice(network_id)
         else:
             # Should this result in an error status and message instead?
             body = "success!"
 
         return Response(status=status, content_type='application/json', body=body)
+
+
+class PortBondController(ControllerBase):
+    def __init__(self, req, link, data, **config):
+        super(PortBondController, self).__init__(req, link, data, **config)
+        self.port_bond = data.get('port_bond')
+        self.api_db = data.get('api_db')
+
+        assert self.port_bond is not None
+        assert self.api_db is not None
+
+    def list_bonds(self, req):
+        body = json.dumps(self.port_bond.list_bonds())
+        return Response(status=200, content_type='application/json', body=body)
+
+    def create_bond(self, req, dpid, network_id):
+        try:
+            bond_id = self.port_bond.create_bond(int(dpid, 16), network_id)
+            body = json.dumps(bond_id)
+            self.api_db.createBond(bond_id, dpid, network_id)
+        except BondAlreadyExist:
+            body = "Bond ID already exists"
+            return Response(status=409, body=body)
+
+        return Response(status=200, content_type='application/json', body=body)
+
+    def delete_bond(self, req, bond_id):
+        self.port_bond.delete_bond(bond_id)
+        self.api_db.deleteBond(bond_id)
+
+        return Response(status=200)
+
+    def add_port(self, req, bond_id, port):
+        try:
+            self.port_bond.add_port(bond_id, int(port))
+            self.api_db.addPort_bond(bond_id, port)
+        except BondNetworkMismatch:
+            body = "Bond's network ID does not match port's network ID\n"
+        except (PortNotFound, BondPortAlreadyBonded):
+            body = "Unavailable port (Port does not exist or port already bonded)\n"
+        except BondNotFound:
+            body = "Bond ID not found\n"
+        else:
+            return Response(status=200)
+
+        return Response(status=403, body=body)
+
+    def del_port(self, req, bond_id, port):
+        try:
+            self.port_bond.del_port(bond_id, int(port))
+            self.api_db.deletePort_bond(bond_id, port)
+        except BondPortNotFound:
+            body = "Port not found in bond\n"
+        except BondNotFound:
+            body = "Bond ID not found \n"
+        else:
+            return Response(status=200)
+
+        return Response(status=404, body=body)
+
+    def list_ports(self, req, bond_id):
+        body = self.port_bond.ports_in_bond(bond_id)
+        if body is not None: # Explicitly use 'None' as body can be an empty list
+            body = json.dumps(body)
+        else:
+            body = "Bond does not exist\n"
+
+        return Response(status=200, content_type='application/json', body=body)
 
 
 class restapi(app_manager.RyuApp):
@@ -411,7 +526,8 @@ class restapi(app_manager.RyuApp):
         'dpset': dpset.DPSet,
         'mac2port': mac_to_port.MacToPortTable,
         'mac2net': mac_to_network.MacToNetwork,
-        'api_db': api_db.API_DB
+        'api_db': api_db.API_DB,
+        'port_bond': port_bond.PortBond
     }
 
     def __init__(self, *args, **kwargs):
@@ -423,7 +539,10 @@ class restapi(app_manager.RyuApp):
         self.mac2port = kwargs['mac2port']
         self.mac2net = kwargs['mac2net']
         self.api_db = kwargs['api_db']
+        self.port_bond = kwargs['port_bond']
         mapper = wsgi.mapper
+        
+        self.is64bit = (sys.maxsize > 2**32)
 
         # Change packet handler
         wsgi.registory['NetworkController'] = { 'nw' : self.nw,
@@ -476,6 +595,7 @@ class restapi(app_manager.RyuApp):
                        controller=NetworkController, action='del_iface',
                        conditions=dict(method=['DELETE']))
 
+        # PortController related APIs
         wsgi.registory['PortController'] = {'nw' : self.nw,
                                             'fv_cli' : self.fv_cli,
                                             'mac2port' : self.mac2port,
@@ -500,7 +620,9 @@ class restapi(app_manager.RyuApp):
         wsgi.registory['FlowVisorController'] = {'fv_cli' : self.fv_cli,
                                                  'nw' : self.nw,
                                                  'dpset' : self.dpset,
-                                                 'mac2port' : self.mac2port}
+                                                 'mac2port' : self.mac2port,
+                                                 'mac2net' : self.mac2net,
+                                                 'api_db' : self.api_db     }
         uri = '/v1.0/flowvisor'
         mapper.connect('flowvisor', uri,
                        controller=FlowVisorController, action='listSlices',
@@ -526,6 +648,36 @@ class restapi(app_manager.RyuApp):
                        controller=FlowVisorController, action='unassignNetwork',
                        conditions=dict(method=['PUT']))
 
+        # Port Bonding related APIs
+        wsgi.registory['PortBondController'] = {'port_bond': self.port_bond,
+                                                'api_db' : self.api_db      }
+        self.port_bond.setNetworkObjHandle(self.nw)
+
+        uri = '/v1.0/port_bond'
+        mapper.connect('port_bond', uri,
+                       controller=PortBondController, action='list_bonds',
+                       conditions=dict(method=['GET']))
+
+        mapper.connect('port_bond', uri + '/{dpid}_{network_id}',
+                       controller=PortBondController, action='create_bond',
+                       conditions=dict(method=['POST']))
+    
+        mapper.connect('port_bond', uri + '/{bond_id}',
+                       controller=PortBondController, action='delete_bond',
+                       conditions=dict(method=['DELETE']))
+
+        mapper.connect('port_bond', uri + '/{bond_id}/{port}',
+                       controller=PortBondController, action='add_port',
+                       conditions=dict(method=['PUT']))
+
+        mapper.connect('port_bond', uri + '/{bond_id}/{port}',
+                       controller=PortBondController, action='del_port',
+                       conditions=dict(method=['DELETE']))
+
+        mapper.connect('port_bond', uri + '/{bond_id}',
+                       controller=PortBondController, action='list_ports',
+                       conditions=dict(method=['GET']))
+
         self.loadDBContents()
 
     # If any previous API calls are stored in DB, reload them now
@@ -533,12 +685,31 @@ class restapi(app_manager.RyuApp):
         networks = self.api_db.getNetworks()
         ports = self.api_db.getPorts()
         macs = self.api_db.getMACs()
+        bonds = self.api_db.getBonds()
+        flowspace = self.api_db.getFlowSpace()
+        net2slice = self.api_db.getDelegatedNets()
 
         for network_id in networks:
             self.nw.create_network(network_id)
 
-        for (network_id, dpid, port_num) in ports:
+        for (bond_id, dpid, network_id) in bonds:
+            self.port_bond.create_bond(int(dpid, 16), network_id, bond_id)
+
+        for (network_id, dpid, port_num, bond_id) in ports:
             self.nw.create_port(network_id, int(dpid, 16), int(port_num))
+            if bond_id:
+                self.port_bond.add_port(bond_id, int(port_num))
 
         for (network_id, mac_address) in macs:
             self.mac2net.add_mac(haddr_to_bin(mac_address), network_id, NW_ID_EXTERNAL)
+
+        for (id, dpid, port_num, mac_address) in flowspace:
+            if (self.is64bit):
+                dpid = int(dpid[2:], 16)
+            else:
+                dpid = int(dpid[2:-1], 16)
+            self.fv_cli.addFlowSpaceID(dpid, port_num, haddr_to_bin(mac_address), id)
+
+        for (network_id, slice) in net2slice:
+            self.fv_cli.slice2nw_add(slice, network_id)
+

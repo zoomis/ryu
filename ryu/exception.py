@@ -34,35 +34,49 @@ class RyuException(Exception):
 class OFPUnknownVersion(RyuException):
     message = 'unknown version %(version)x'
 
-
 class OFPMalformedMessage(RyuException):
     message = 'malformed message'
-
 
 class NetworkNotFound(RyuException):
     message = 'no such network id %(network_id)s'
 
-
 class NetworkAlreadyExist(RyuException):
     message = 'network id %(network_id)s already exists'
 
-
 class PortNotFound(RyuException):
     message = 'no such port (%(dpid)s, %(port)s) in network %(network_id)s'
-
 
 class PortAlreadyExist(RyuException):
     message = 'port (%(dpid)s, %(port)s) in network %(network_id)s ' \
               'already exists'
 
-
 class PortUnknown(RyuException):
     message = 'unknown network id for port (%(dpid)s %(port)s)'
-
 
 class MacAddressDuplicated(RyuException):
     message = 'MAC address %(mac)s is duplicated'
 
-
 class MacAddressNotFound(RyuException):
     message = 'No such MAC address %(mac)s found'
+
+class BondAlreadyExist(RyuException):
+    message = 'Bond id %(bond_id)s already exists'
+
+class BondNotFound(RyuException):
+    message = 'No such bond with id %(bond_id)s found'
+
+class BondNetworkMismatch(RyuException):
+    message = "Port's network id does not match network id for bond %(bond_id)s"
+
+class BondPortNotFound(RyuException):
+    message = 'Port number %(port)s does not exist in bond %(bond_id)s'
+
+class BondPortAlreadyBonded(RyuException):
+    message = 'Port number %(port)s already exists in bond %(bond_id)s'
+
+class FlowSpaceIDAlreadyExist(RyuException):
+   message = 'FlowSpace ID %(flowspace_id)s already exists'
+
+class NetworkAlreadyAssigned(RyuException):
+    message = 'Network ID %(network_id)s already assigned to slice %(sliceName)s'
+

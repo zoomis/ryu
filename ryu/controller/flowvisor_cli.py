@@ -95,18 +95,10 @@ class FlowVisor_CLI(object):
     def addFlowSpaceID(self, dpid, port, mac, flowspace_id):
         self.flowspace_ids[(dpid, port, mac)] = flowspace_id
 
-    def delFlowSpaceIDs(self, idList):
-        # idList can also be a single integer; Convert to list
-        if type(idList) is int:
-            idList = [idList]
-        
+    def delFlowSpaceID(self, flowspace_id):
         for tuple, id in self.flowspace_ids.items():
-            if id in idList:
-                try:
-                    del self.flowspace_ids[tuple]
-                except KeyError:
-                    # How to handle such an error?
-                    pass
+            if id == flowspace_id:
+                del self.flowspace_ids[tuple]
 
     # Returns a list of FlowSpace IDs whose tuple matches the input parameters
     # Use 'None' as a wildcard
@@ -143,27 +135,4 @@ class FlowVisor_CLI(object):
 
         return None
 
-    # Called when PortController wants to create or update a port
-    def updatePort(self, network_id, dpid, port, portExists, old_network_id=None):
-        if portExists: # Updating an existing port whose network has changed
-            self.deletePort(old_network_id, dpid, port)
-
-        # Leave adding new FlowSpace IDs to application's packet handler
-
-    # Called when PortController wants to delete a port
-    def deletePort(self, network_id, dpid, port):
-        if self.getSliceName(network_id) or (network_id == NW_ID_EXTERNAL):
-            try:
-                flowspace_ids = self.getFlowSpaceIDs(dpid, port)
-            except PortUnknown:
-                raise PortNotFound(dpid=dpid, port=port, network_id=network_id)
-            else:
-                for id in flowspace_ids:
-                    ret = self.removeFlowSpace(id)
-                    # To Do: Error check on ret
-
-                self.delFlowSpaceIDs(flowspace_ids)
-            
-            # Should we delete entry from the switch's flow table?
-            # Or should we assume the application will take care of it?
 
