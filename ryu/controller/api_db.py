@@ -211,7 +211,12 @@ class API_DB(object):
             else:
                 raise MacAddressDuplicated(mac=mac)
 
-        self.db.commit()
+        try:
+            self.db.commit()
+        except sqlexc.IntegrityError:
+            # Most likely due to race condition between setting DB change
+            # and packet arriving at next switch triggering a DB read
+            self.db.session.rollback()
 
     def delMAC(self, mac):
         self.checkConnection()

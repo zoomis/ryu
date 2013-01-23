@@ -416,7 +416,13 @@ class FlowVisorController(ControllerBase):
         body = ""
 
         # Check if network has been assigned to a controller
-        if self.fv_cli.getSliceName(network_id):
+        sliceName = self.fv_cli.getSliceName(network_id)
+        if sliceName:
+            # Remove network UUID from slice2nw first to prevent packets which
+            # arrive during removal process from triggering FlowSpace add events in app
+            self.fv_cli.slice2nw_del(network_id)
+            self.api_db.removeNetFromSlice(network_id)
+
             # Remove FlowSpace rules associated with the network
             macs = self.mac2net.list_macs(network_id)
             if macs is not None:
@@ -440,9 +446,10 @@ class FlowVisorController(ControllerBase):
                 if dp is not None:
                     dp.send_delete_all_flows()
 
-            if (status == 200):
-                self.fv_cli.slice2nw_del(network_id)
-                self.api_db.removeNetFromSlice(network_id)
+            if (status != 200):
+                # Something went wrong. Re-add network UUID in slice2nw
+                self.fv_cli.slice2nw_add(sliceName, network_id)
+                self.api_db.assignNetToSlice(sliceName, network_id)
         else:
             # Should this result in an error status and message instead?
             body = "success!"
