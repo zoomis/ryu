@@ -99,11 +99,7 @@ class Network(object):
         self.dpids[dpid][port] = network_id
 
     def create_port(self, network_id, dpid, port):
-        if NW_ID_EXTERNAL != self.dpids.get(dpid, {}).get(port, None):
-            self._update_port(network_id, dpid, port, False)
-        else:
-            # If a port has been registered as external, leave it be
-            pass
+        self._update_port(network_id, dpid, port, False)
 
     def update_port(self, network_id, dpid, port):
         self._update_port(network_id, dpid, port, True)
