@@ -45,10 +45,10 @@ class PortBond(object):
     def setNetworkObjHandle(self, nw):
         self.nw = nw
 
-    # Returns next output port for a given bond, or -1 if bond is empty
+    # Returns next output port for a given bond, or None if bond is empty
     # Currently implements a simple round-robin
     def get_out_port(self, bond_id):
-        port = -1
+        port = None
         if self.portCount[bond_id] > 0:
             self.nextPortIdx[bond_id] = (self.nextPortIdx[bond_id] + 1) % self.portCount[bond_id]
 

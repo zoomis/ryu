@@ -184,7 +184,9 @@ class SimpleIsolation(app_manager.RyuApp):
 
             # Re-add one port for each bond (Except source bond, if source port is bonded)
             if in_bond_id != bond_id:
-                out_port_list.add(self.port_bond.get_out_port(bond_id))
+                out_port = self.port_bond.get_out_port(bond_id)
+                if out_port:
+                    out_port_list.add(out_port)
 
         return list(out_port_list)
 
