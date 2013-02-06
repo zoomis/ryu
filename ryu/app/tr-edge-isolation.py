@@ -79,13 +79,14 @@ class SimpleIsolation(app_manager.RyuApp):
     def _install_modflow(self, msg, src, dst=None, actions=None):
         datapath = msg.datapath
         ofproto = datapath.ofproto
-        #if len(actions) > 0:
-        #    act = "out to "
-        #    for action in actions:
-        #        act += str(action.port) + ","
-        #else:
-        #    act = "drop"
-        #print "installing flow from port %s, src %s to dst %s, action %s" % (msg.in_port, haddr_to_str(src), haddr_to_str(dst), act)
+        if LOG.getEffectiveLevel() == logging.DEBUG:
+            if len(actions) > 0:
+                act = "out to "
+                for action in actions:
+                    act += str(action.port) + ","
+            else:
+                act = "drop"
+            LOG.debug("installing flow from port %s, src %s to dst %s, action %s", msg.in_port, haddr_to_str(src), haddr_to_str(dst), act)
         if actions is None:
             actions = []
 
@@ -162,7 +163,6 @@ class SimpleIsolation(app_manager.RyuApp):
             LOG.debug("learned dpid %s in_port %d out_port %d src %s dst %s",
                       datapath.id, msg.in_port, actions[0].port,
                       haddr_to_str(src), haddr_to_str(dst))
-            #print "actually sent out to port %s" % actions[0].port
 
         datapath.send_packet_out(msg.buffer_id, msg.in_port, actions)
 
@@ -191,7 +191,7 @@ class SimpleIsolation(app_manager.RyuApp):
         return list(out_port_list)
 
     def _flood_to_nw_id(self, msg, src, dst, nw_id):
-        print "flood to nw id %s" % nw_id
+        LOG.info("flood to nw id %s", nw_id)
         datapath = msg.datapath
         in_port = msg.in_port
         actions = []
@@ -202,7 +202,7 @@ class SimpleIsolation(app_manager.RyuApp):
 
         out_port_list = self._get_all_out_ports(datapath.id, msg.in_port,
                                                     nw_id, NW_ID_EXTERNAL)
-        print "out port list %s" % out_port_list
+        LOG.debug("out port list %s", out_port_list)
 
         for port_no in out_port_list:
             LOG.debug("port_no %s", port_no)
@@ -229,7 +229,7 @@ class SimpleIsolation(app_manager.RyuApp):
             self._install_modflow(msg, src, dst, actions)
 
         datapath.send_packet_out(msg.buffer_id, in_port, actions)
-        print "actually sent out to these ports: %s" % out_port_list
+        LOG.info("sent out to these ports: %s", out_port_list)
 
     def _learned_mac_or_flood_to_nw_id(self, msg, src, dst,
                                        dst_nw_id, out_port):
@@ -239,7 +239,7 @@ class SimpleIsolation(app_manager.RyuApp):
             self._flood_to_nw_id(msg, src, dst, dst_nw_id)
 
     def _modflow_and_drop_packet(self, msg, src, dst):
-        print "installing flow for dropping packet"
+        LOG.info("installing flow for dropping packet")
         datapath = msg.datapath
         in_port = msg.in_port
 
@@ -267,8 +267,8 @@ class SimpleIsolation(app_manager.RyuApp):
         ofproto = datapath.ofproto
 
         dst, src, _eth_type = struct.unpack_from('!6s6sH', buffer(msg.data), 0)
-        print "packet in from port %s of dpid %s" % (msg.in_port, hex(datapath.id))
-        print "src mac %s, dst mac %s" % (haddr_to_str(src), haddr_to_str(dst))
+        LOG.info("packet in from port %s of dpid %s", msg.in_port, hex(datapath.id))
+        LOG.info("src mac %s, dst mac %s", haddr_to_str(src), haddr_to_str(dst))
 
         try:
             port_nw_id = self.nw.get_network(datapath.id, msg.in_port)
@@ -379,7 +379,7 @@ class SimpleIsolation(app_manager.RyuApp):
         else:
             self.pktHandling_BaseCase(msg, datapath, ofproto, dst, src, broadcast,
                                         port_nw_id, src_nw_id, dst_nw_id, out_port)
-        print "\n"
+        LOG.info("\n")
 
     def _port_add(self, ev):
         #
