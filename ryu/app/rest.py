@@ -15,14 +15,18 @@
 # limitations under the License.
 
 import json
-from webob import Request, Response
+from webob import Response
 
+from ryu.app import wsgi as app_wsgi
+from ryu.app.wsgi import ControllerBase, WSGIApplication
 from ryu.base import app_manager
 from ryu.controller import network
 from ryu.exception import NetworkNotFound, NetworkAlreadyExist
 from ryu.exception import PortNotFound, PortAlreadyExist
 from ryu.app.wsgi import ControllerBase, WSGIApplication
 from ryu.exception import MacAddressDuplicated
+from ryu.lib import dpid as dpid_lib
+from ryu.lib import mac as mac_lib
 
 ## TODO:XXX
 ## define db interface and store those information into db
@@ -57,11 +61,22 @@ from ryu.exception import MacAddressDuplicated
 #
 # remove a set of dpid and port
 # DELETE /v1.0/networks/{network-id}/{dpid}_{port-id}
-
-# We store networks and ports like the following:
 #
-# {network_id: [(dpid, port), ...
-# {3: [(3,4), (4,7)], 5: [(3,6)], 1: [(5,6), (4,5), (4, 10)]}
+# get the list of mac addresses of dpid and port
+# GET /v1.0/networks/{network-id}/{dpid}_{port-id}/macs/
+#
+# register a new mac address for dpid and port
+# Fail if mac address is already registered or the mac address is used
+# for other ports of the same network-id
+# POST /v1.0/networks/{network-id}/{dpid}_{port-id}/macs/{mac}
+#
+# update a new mac address for dpid and port
+# Success as nop even if same mac address is already registered.
+# For now, changing mac address is not allows as it fails.
+# PUT /v1.0/networks/{network-id}/{dpid}_{port-id}/macs/{mac}
+#
+# For now DELETE /v1.0/networks/{network-id}/{dpid}_{port-id}/macs/{mac}
+# is not supported. mac address is released when port is deleted.
 #
 
 class NetworkController(ControllerBase):
@@ -152,8 +167,10 @@ class PortController(ControllerBase):
         self.nw = data
 
     def create(self, req, network_id, dpid, port_id, **_kwargs):
+        dpid = dpid_lib.str_to_dpid(dpid)
+        port_id = int(port_id)
         try:
-            self.nw.create_port(network_id, int(dpid, 16), int(port_id))
+            self.nw.create_port(network_id, dpid, port_id)
         except NetworkNotFound:
             return Response(status=404)
         except PortAlreadyExist:
@@ -162,8 +179,10 @@ class PortController(ControllerBase):
         return Response(status=200)
 
     def update(self, req, network_id, dpid, port_id, **_kwargs):
+        dpid = dpid_lib.str_to_dpid(dpid)
+        port_id = int(port_id)
         try:
-            self.nw.update_port(network_id, int(dpid, 16), int(port_id))
+            self.nw.update_port(network_id, dpid, port_id)
         except NetworkNotFound:
             return Response(status=404)
 
@@ -178,49 +197,85 @@ class PortController(ControllerBase):
         return Response(content_type='application/json', body=body)
 
     def delete(self, req, network_id, dpid, port_id, **_kwargs):
+        dpid = dpid_lib.str_to_dpid(dpid)
+        port_id = int(port_id)
         try:
-            self.nw.remove_port(network_id, int(dpid, 16), int(port_id))
+            self.nw.remove_port(network_id, dpid, port_id)
         except (NetworkNotFound, PortNotFound):
             return Response(status=404)
 
         return Response(status=200)
 
 
-class restapi(app_manager.RyuApp):
+class MacController(ControllerBase):
+    def __init__(self, req, link, data, **config):
+        super(MacController, self).__init__(req, link, data, **config)
+        self.nw = data
+
+    def create(self, _req, network_id, dpid, port_id, mac_addr, **_kwargs):
+        dpid = dpid_lib.str_to_dpid(dpid)
+        port_id = int(port_id)
+        mac_addr = mac_lib.haddr_to_bin(mac_addr)
+        try:
+            self.nw.create_mac(network_id, dpid, port_id, mac_addr)
+        except PortNotFound:
+            return Response(status=404)
+        except network.MacAddressAlreadyExist:
+            return Response(status=409)
+
+        return Response(status=200)
+
+    def update(self, _req, network_id, dpid, port_id, mac_addr, **_kwargs):
+        dpid = dpid_lib.str_to_dpid(dpid)
+        port_id = int(port_id)
+        mac_addr = mac_lib.haddr_to_bin(mac_addr)
+        try:
+            self.nw.update_mac(network_id, dpid, port_id, mac_addr)
+        except PortNotFound:
+            return Response(status=404)
+
+        return Response(status=200)
+
+    def lists(self, _req, network_id, dpid, port_id, **_kwargs):
+        dpid = dpid_lib.str_to_dpid(dpid)
+        port_id = int(port_id)
+        try:
+            body = json.dumps([mac_lib.haddr_to_str(mac_addr) for mac_addr in
+                               self.nw.list_mac(dpid, port_id)])
+        except PortNotFound:
+            return Response(status=404)
+
+        return Response(content_type='application/json', body=body)
+
+
+class RestAPI(app_manager.RyuApp):
     _CONTEXTS = {
         'network': network.Network,
         'wsgi': WSGIApplication
-        }
+    }
 
     def __init__(self, *args, **kwargs):
-        super(restapi, self).__init__(*args, **kwargs)
+        super(RestAPI, self).__init__(*args, **kwargs)
         self.nw = kwargs['network']
         wsgi = kwargs['wsgi']
         mapper = wsgi.mapper
 
         # Change packet handler
         wsgi.registory['NetworkController'] = self.nw
-        mapper.connect('networks', '/v1.0/packethandler/{handler_id}',
-                       controller=NetworkController, action='setPacketHandler',
-                       conditions=dict(method=['PUT']))
-        
+        route_name = 'networks'
         uri = '/v1.0/networks'
-        mapper.connect('networks', uri,
+        mapper.connect(route_name, uri,
                        controller=NetworkController, action='lists',
                        conditions=dict(method=['GET', 'HEAD']))
 
         uri += '/{network_id}'
-        mapper.connect('networks', uri,
-                       controller=NetworkController, action='create',
-                       conditions=dict(method=['POST']))
-
-        mapper.connect('networks', uri,
-                       controller=NetworkController, action='update',
-                       conditions=dict(method=['PUT']))
-
-        mapper.connect('networks', uri,
-                       controller=NetworkController, action='delete',
-                       conditions=dict(method=['DELETE']))
+        s = mapper.submapper(controller=NetworkController)
+        s.connect(route_name, uri, action='create',
+                  conditions=dict(method=['POST']))
+        s.connect(route_name, uri, action='update',
+                  conditions=dict(method=['PUT']))
+        s.connect(route_name, uri, action='delete',
+                  conditions=dict(method=['DELETE']))
 
         # List macs associated with a network
         mapper.connect('networks', uri + '/macs',
@@ -248,18 +303,36 @@ class restapi(app_manager.RyuApp):
                        conditions=dict(method=['DELETE']))
 
         wsgi.registory['PortController'] = self.nw
-        mapper.connect('networks', uri,
+        route_name = 'ports'
+        mapper.connect(route_name, uri,
                        controller=PortController, action='lists',
                        conditions=dict(method=['GET']))
 
         uri += '/{dpid}_{port_id}'
-        mapper.connect('ports', uri,
-                       controller=PortController, action='create',
-                       conditions=dict(method=['POST']))
-        mapper.connect('ports', uri,
-                       controller=PortController, action='update',
-                       conditions=dict(method=['PUT']))
+        requirements = {'dpid': dpid_lib.DPID_PATTERN,
+                        'port_id': app_wsgi.DIGIT_PATTERN}
+        s = mapper.submapper(controller=PortController,
+                             requirements=requirements)
+        s.connect(route_name, uri, action='create',
+                  conditions=dict(method=['POST']))
+        s.connect(route_name, uri, action='update',
+                  conditions=dict(method=['PUT']))
+        s.connect(route_name, uri, action='delete',
+                  conditions=dict(method=['DELETE']))
 
-        mapper.connect('ports', uri,
-                       controller=PortController, action='delete',
-                       conditions=dict(method=['DELETE']))
+        wsgi.registory['MacController'] = self.nw
+        route_name = 'macs'
+        uri += '/macs'
+        mapper.connect(route_name, uri,
+                       controller=MacController, action='lists',
+                       conditions=dict(method=['GET']),
+                       requirements=requirements)
+
+        uri += '/{mac_addr}'
+        requirements['mac_addr'] = mac_lib.HADDR_PATTERN
+        s = mapper.submapper(controller=MacController,
+                             requirements=requirements)
+        s.connect(route_name, uri, action='create',
+                  conditions=dict(method=['POST']))
+        s.connect(route_name, uri, action='update',
+                  conditions=dict(method=['PUT']))

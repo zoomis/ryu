@@ -1,4 +1,5 @@
 coverage
 nose
-pep8==0.6.1
+pep8
 pylint==0.25.0
+netaddr

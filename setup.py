@@ -14,13 +14,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import sys
 
 from setuptools import find_packages
 from setuptools import setup
 
 from ryu import version
+from ryu import utils
+
+requires = utils.parse_requirements()
 
 doing_bdist = any(arg.startswith('bdist') for arg in sys.argv[1:])
 
@@ -32,12 +34,18 @@ if doing_bdist:
         start:long_description.find('\n\n\n', start)]
 
 classifiers = [
+    'Development Status :: 5 - Production/Stable',
     'License :: OSI Approved :: Apache Software License',
     'Topic :: System :: Networking',
     'Natural Language :: English',
     'Programming Language :: Python',
     'Operating System :: Unix',
-    ]
+]
+
+if sys.platform == 'win32':
+    data_files = [('etc/ryu', ['etc/ryu/ryu.conf'])]
+else:
+    data_files = [('/etc/ryu', ['etc/ryu/ryu.conf'])]
 
 setup(name='ryu',
       version=version,
@@ -48,10 +56,10 @@ setup(name='ryu',
       url='http://osrg.github.com/ryu/',
       author='Ryu project team',
       author_email='ryu-devel@lists.sourceforge.net',
+      install_requires=requires,
       license='Apache License 2.0',
       packages=find_packages(),
       scripts=['bin/ryu-manager',
                'bin/ryu-client'],
-      data_files=[('/etc/ryu', ['etc/ryu/ryu.conf'])],
-#      install_requires=[]
+      data_files=data_files,
       )

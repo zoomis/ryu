@@ -16,6 +16,8 @@
 
 import itertools
 
+# string representation
+HADDR_PATTERN = r'([0-9a-f]{2}:){5}[0-9a-f]{2}'
 
 # Internal representation of mac address is string[6]
 _HADDR_LEN = 6
@@ -33,6 +35,8 @@ def is_multicast(addr):
 def haddr_to_str(addr):
     """Format mac address in internal representation into human readable
     form"""
+    if addr is None:
+        return 'None'
     assert len(addr) == _HADDR_LEN
     return ':'.join('%02x' % ord(char) for char in addr)
 

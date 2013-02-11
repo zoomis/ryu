@@ -140,8 +140,8 @@ class OFPExperimenter(MsgBase):
 
 
 class OFPPort(collections.namedtuple('OFPPort', (
-            'port_no', 'hw_addr', 'name', 'config', 'state', 'curr',
-            'advertised', 'supported', 'peer', 'curr_speed', 'max_speed'))):
+        'port_no', 'hw_addr', 'name', 'config', 'state', 'curr',
+        'advertised', 'supported', 'peer', 'curr_speed', 'max_speed'))):
 
     @classmethod
     def parser(cls, buf, offset):
@@ -170,8 +170,8 @@ class OFPSwitchFeatures(MsgBase):
          msg.n_tables,
          msg.capabilities,
          msg.reserved) = struct.unpack_from(
-            ofproto_v1_2.OFP_SWITCH_FEATURES_PACK_STR, msg.buf,
-            ofproto_v1_2.OFP_HEADER_SIZE)
+             ofproto_v1_2.OFP_SWITCH_FEATURES_PACK_STR, msg.buf,
+             ofproto_v1_2.OFP_HEADER_SIZE)
 
         msg.ports = {}
         n_ports = ((msg_len - ofproto_v1_2.OFP_SWITCH_FEATURES_SIZE) /
@@ -234,8 +234,8 @@ class OFPPacketIn(MsgBase):
                                              msg_len, xid, buf)
         (msg.buffer_id, msg.total_len, msg.reason,
          msg.table_id) = struct.unpack_from(
-            ofproto_v1_2.OFP_PACKET_IN_PACK_STR,
-            msg.buf, ofproto_v1_2.OFP_HEADER_SIZE)
+             ofproto_v1_2.OFP_PACKET_IN_PACK_STR,
+             msg.buf, ofproto_v1_2.OFP_HEADER_SIZE)
 
         msg.match = OFPMatch.parser(msg.buf, ofproto_v1_2.OFP_PACKET_IN_SIZE -
                                     ofproto_v1_2.OFP_MATCH_SIZE)
@@ -266,14 +266,14 @@ class OFPFlowRemoved(MsgBase):
          msg.table_id, msg.duration_sec, msg.duration_nsec,
          msg.idle_timeout, msg.hard_timeout, msg.packet_count,
          msg.byte_count) = struct.unpack_from(
-            ofproto_v1_2.OFP_FLOW_REMOVED_PACK_STR0,
-            msg.buf,
-            ofproto_v1_2.OFP_HEADER_SIZE)
+             ofproto_v1_2.OFP_FLOW_REMOVED_PACK_STR0,
+             msg.buf,
+             ofproto_v1_2.OFP_HEADER_SIZE)
 
         offset = (ofproto_v1_2.OFP_FLOW_REMOVED_SIZE -
                   ofproto_v1_2.OFP_MATCH_SIZE)
 
-        msg.match = OFPMatch.parser(buf, offset)
+        msg.match = OFPMatch.parser(msg.buf, offset)
 
         return msg
 
@@ -760,7 +760,9 @@ class OFPActionExperimenter(OFPAction):
     def parser(cls, buf, offset):
         (type_, len_, experimenter) = struct.unpack_from(
             ofproto_v1_2.OFP_ACTION_EXPERIMENTER_HEADER_PACK_STR, buf, offset)
-        return cls(experimenter)
+        ex = cls(experimenter)
+        ex.len = len_
+        return ex
 
     def serialize(self, buf, offset):
         msg_pack_into(ofproto_v1_2.OFP_ACTION_EXPERIMENTER_HEADER_PACK_STR,
@@ -922,8 +924,8 @@ class OFPDescStatsRequest(OFPStatsRequest):
 
 @OFPStatsReply.register_stats_reply_type(ofproto_v1_2.OFPST_DESC,
                                          body_single_struct=True)
-class OFPDescStats(collections.namedtuple('OFPDescStats',
-        ('mfr_desc', 'hw_desc', 'sw_desc', 'serial_num', 'dp_desc'))):
+class OFPDescStats(collections.namedtuple('OFPDescStats', (
+        'mfr_desc', 'hw_desc', 'sw_desc', 'serial_num', 'dp_desc'))):
     @classmethod
     def parser(cls, buf, offset):
         desc = struct.unpack_from(ofproto_v1_2.OFP_DESC_STATS_PACK_STR,
@@ -984,8 +986,8 @@ class OFPFlowStats(object):
          duration_nsec, priority,
          idle_timeout, hard_timeout,
          cookie, packet_count, byte_count) = struct.unpack_from(
-            ofproto_v1_2.OFP_FLOW_STATS_PACK_STR,
-            buf, offset)
+             ofproto_v1_2.OFP_FLOW_STATS_PACK_STR,
+             buf, offset)
         offset += (ofproto_v1_2.OFP_FLOW_STATS_SIZE -
                    ofproto_v1_2.OFP_MATCH_SIZE)
         match = OFPMatch.parser(buf, offset)
@@ -1036,8 +1038,8 @@ class OFPAggregateStatsRequest(OFPStatsRequest):
 
 @OFPStatsReply.register_stats_reply_type(ofproto_v1_2.OFPST_AGGREGATE,
                                          body_single_struct=True)
-class OFPAggregateStatsReply(collections.namedtuple('OFPAggregateStats',
-        ('packet_count', 'byte_count', 'flow_count'))):
+class OFPAggregateStatsReply(collections.namedtuple('OFPAggregateStats', (
+        'packet_count', 'byte_count', 'flow_count'))):
     @classmethod
     def parser(cls, buf, offset):
         desc = struct.unpack_from(
@@ -1176,9 +1178,9 @@ class OFPGroupStats(object):
     @classmethod
     def parser(cls, buf, offset):
         (length, group_id, ref_count, packet_count,
-                 byte_count) = struct.unpack_from(
-            ofproto_v1_2.OFP_GROUP_STATS_PACK_STR,
-            buf, offset)
+         byte_count) = struct.unpack_from(
+             ofproto_v1_2.OFP_GROUP_STATS_PACK_STR,
+             buf, offset)
 
         bucket_len = length - ofproto_v1_2.OFP_GROUP_STATS_SIZE
         offset += ofproto_v1_2.OFP_GROUP_STATS_SIZE
@@ -2073,6 +2075,16 @@ class MTVlanVid(OFPMatchField):
         super(MTVlanVid, self).__init__(header)
         self.value = value
         self.mask = mask
+
+    @classmethod
+    def field_parser(cls, header, buf, offset):
+        m = super(MTVlanVid, cls).field_parser(header, buf, offset)
+        m.value &= ~ofproto_v1_2.OFPVID_PRESENT
+        return m
+
+    def serialize(self, buf, offset):
+        self.value |= ofproto_v1_2.OFPVID_PRESENT
+        super(MTVlanVid, self).serialize(buf, offset)
 
 
 @OFPMatchField.register_field_header([ofproto_v1_2.OXM_OF_VLAN_PCP])

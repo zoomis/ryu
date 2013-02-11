@@ -1,3 +1,26 @@
+*******************************
+How to Get Your Change Into Ryu
+*******************************
+
+Submitting a change
+===================
+
+Send patches to ryu-devel@list.sourceforge.net. Please don't use 'pull
+request' on github. We expect you to send a patch in Linux kernel
+development style. If you are not familiar with it, please read the
+following document:
+
+http://lxr.linux.no/source/Documentation/SubmittingPatches
+
+Please check your changes with pep8 and run unittests to make sure
+that they don't break the existing features. The following command
+does both for you:
+
+fujita@rose:~/git/ryu$ ./run_tests.sh
+
+Of course, you are encouraged to add unittests when you add new
+features (it's not a must though).
+
 Python version and libraries
 ============================
 * Python 2.6+

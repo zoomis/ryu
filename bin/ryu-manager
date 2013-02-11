@@ -17,21 +17,28 @@
 # limitations under the License.
 
 import gevent
+from gevent import monkey
+monkey.patch_all()
+
 import gflags
 import logging
 import sys
 
-from gevent import monkey
-monkey.patch_all()
-
 from ryu import log
 log.early_init_log(logging.DEBUG)
 
+from ryu import flags
 from ryu import version
 from ryu import utils
 from ryu.app import wsgi
 from ryu.base.app_manager import AppManager
 from ryu.controller import controller
+
+# TODO:
+#   Right now, we have our own patched copy of ovs python bindings
+#   Once our modification is upstreamed and widely deployed,
+#   use it
+import ryu.contrib
 
 
 FLAGS = gflags.FLAGS
@@ -50,6 +57,9 @@ def main():
         sys.exit(0)
 
     log.init_log()
+
+    # always enable ofp for now.
+    FLAGS.app_lists += ['ryu.controller.ofp_handler']
 
     if len(args) > 1:
         FLAGS.app_lists += args[1:]

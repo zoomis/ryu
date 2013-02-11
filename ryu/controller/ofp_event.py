@@ -1,4 +1,4 @@
-# Copyright (C) 2011 Nippon Telegraph and Telephone Corporation.
+# Copyright (C) 2012 Nippon Telegraph and Telephone Corporation.
 # Copyright (C) 2011 Isaku Yamahata <yamahata at valinux co jp>
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -59,18 +59,23 @@ def _create_ofp_msg_ev_class(msg_cls):
 def _create_ofp_msg_ev_from_module(modname):
     mod = utils.import_module(modname)
     # print mod
-    for _k, cls in mod.__dict__.items():
-        if not inspect.isclass(cls):
-            continue
-        if 'cls_msg_type' not in cls.__dict__:
+    for _k, cls in inspect.getmembers(mod, inspect.isclass):
+        if not hasattr(cls, 'cls_msg_type'):
             continue
         _create_ofp_msg_ev_class(cls)
 
 
 # TODO:XXX
 _PARSER_MODULE_LIST = ['ryu.ofproto.ofproto_v1_0_parser',
-                       'ryu.ofproto.ofproto_v1_2_parser']
+                       'ryu.ofproto.ofproto_v1_2_parser',
+                       'ryu.ofproto.ofproto_v1_3_parser']
 
 for m in _PARSER_MODULE_LIST:
     # print 'loading module %s' % m
     _create_ofp_msg_ev_from_module(m)
+
+
+class EventOFPStateChange(event.EventBase):
+    def __init__(self, dp):
+        super(EventOFPStateChange, self).__init__()
+        self.datapath = dp
