@@ -53,6 +53,10 @@ class OFPClientV1_0(RyuClientBase):
     # /networks/{network_id}/{dpid}_{port}
     path_networks = 'networks/%s'
     path_port = path_networks + '/%s_%s'
+    mac_path = 'networks/%s/macs/%s'
+    # /macipportdp/{mac}/{ip}/{dpid}_{port_id}'
+    ip_mac_mapping_path = 'networks/%s/macipportdp/%s/%s/%s_%s'
+
 
     def __init__(self, address):
         super(OFPClientV1_0, self).__init__(OFPClientV1_0.version, address)
@@ -74,6 +78,9 @@ class OFPClientV1_0(RyuClientBase):
 
     def create_port(self, network_id, dpid, port):
         self._do_request('POST', self.path_port % (network_id, dpid, port))
+
+    def ip_mac_mapping(self, network_id, dpid, mac, ip, port):
+	self._do_request('PUT', self.ip_mac_mapping_path % (network_id, mac, ip, dpid, port))
 
     def update_port(self, network_id, dpid, port):
         self._do_request('PUT', self.path_port % (network_id, dpid, port))

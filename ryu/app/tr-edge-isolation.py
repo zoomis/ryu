@@ -70,13 +70,16 @@ class SimpleIsolation(app_manager.RyuApp):
         msg = ev.msg
         datapath = msg.datapath
 
+        #if datapath.id == 0x80027513556:
+        #   return
+
         datapath.send_delete_all_flows()
         datapath.send_barrier()
 
         self.mac2port.dpid_add(ev.msg.datapath_id)
         self.nw.add_datapath(ev.msg)
 
-    def _install_modflow(self, msg, src, dst=None, actions=None):
+    def _install_modflow(self, msg, src, dst, actions, eth_type):
         datapath = msg.datapath
         ofproto = datapath.ofproto
         if LOG.getEffectiveLevel() == logging.DEBUG:
@@ -95,6 +98,8 @@ class SimpleIsolation(app_manager.RyuApp):
         rule.set_in_port(msg.in_port)
         if dst is not None:
             rule.set_dl_dst(dst)
+        if eth_type is not None:
+            rule.set_dl_type(eth_type)
         rule.set_dl_src(src)
         datapath.send_flow_mod(
             rule=rule, cookie=0, command=datapath.ofproto.OFPFC_ADD,
@@ -105,7 +110,7 @@ class SimpleIsolation(app_manager.RyuApp):
 
     # Creates the appropriate action lists and installs the flows
     # Returns the list of action(s) it installed
-    def _install_unicast_flow(self, msg, src, dst, out_port):
+    def _install_unicast_flow(self, msg, src, dst, out_port, eth_type):
         datapath = msg.datapath
 
         in_bond_id = self.port_bond.get_bond_id(datapath.id, msg.in_port)
@@ -123,7 +128,7 @@ class SimpleIsolation(app_manager.RyuApp):
             # Install a drop rule for each port in bond
             for port in self.port_bond.ports_in_bond(out_bond_id):
                 msg.in_port = port
-                self._install_modflow(msg, src, None, [])
+                self._install_modflow(msg, src, dst=None, actions=[], eth_type=eth_type)
 
             # Replace msg.in_port with original
             msg.in_port = orig_in_port
@@ -135,17 +140,17 @@ class SimpleIsolation(app_manager.RyuApp):
             for port in self.port_bond.ports_in_bond(in_bond_id):
                 msg.in_port = port
                 actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
-                self._install_modflow(msg, src, dst, actions)
+                self._install_modflow(msg, src, dst=dst, actions=actions, eth_type=eth_type)
 
             # Replace msg.in_port with original
             msg.in_port = orig_in_port
         else:
             actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
-            self._install_modflow(msg, src, dst, actions)
+            self._install_modflow(msg, src, dst=dst, actions=actions, eth_type=eth_type)
 
         return actions
 
-    def _forward_to_nw_id(self, msg, src, dst, nw_id, out_port):
+    def _forward_to_nw_id(self, msg, src, dst, nw_id, out_port, eth_type):
         assert out_port is not None
         datapath = msg.datapath
 
@@ -158,7 +163,7 @@ class SimpleIsolation(app_manager.RyuApp):
             return
 
         # Install unicast flows and retrieve resulting actions list
-        actions = self._install_unicast_flow(msg, src, dst, out_port)
+        actions = self._install_unicast_flow(msg, src, dst, out_port, eth_type)
         if actions:
             LOG.debug("learned dpid %s in_port %d out_port %d src %s dst %s",
                       datapath.id, msg.in_port, actions[0].port,
@@ -190,7 +195,7 @@ class SimpleIsolation(app_manager.RyuApp):
 
         return list(out_port_list)
 
-    def _flood_to_nw_id(self, msg, src, dst, nw_id):
+    def _flood_to_nw_id(self, msg, src, dst, nw_id, eth_type):
         LOG.info("flood to nw id %s", nw_id)
         datapath = msg.datapath
         in_port = msg.in_port
@@ -214,7 +219,7 @@ class SimpleIsolation(app_manager.RyuApp):
                 # Install a drop rule for each port in bond
                 for port in self.port_bond.ports_in_bond(out_bond_id):
                     msg.in_port = port
-                    self._install_modflow(msg, src, None, [])
+                    self._install_modflow(msg, src, dst=None, actions=[], eth_type=eth_type)
 
                 # Replace msg.in_port with original
                 msg.in_port = in_port
@@ -224,21 +229,21 @@ class SimpleIsolation(app_manager.RyuApp):
             # Install a flow for each port in bond
             for port in self.port_bond.ports_in_bond(in_bond_id):
                 msg.in_port = port
-                self._install_modflow(msg, src, dst, actions)
+                self._install_modflow(msg, src, dst, actions, eth_type)
         else:
-            self._install_modflow(msg, src, dst, actions)
+            self._install_modflow(msg, src, dst, actions, eth_type)
 
         datapath.send_packet_out(msg.buffer_id, in_port, actions)
         LOG.info("sent out to these ports: %s", out_port_list)
 
     def _learned_mac_or_flood_to_nw_id(self, msg, src, dst,
-                                       dst_nw_id, out_port):
+                                       dst_nw_id, out_port, eth_type):
         if out_port is not None:
-            self._forward_to_nw_id(msg, src, dst, dst_nw_id, out_port)
+            self._forward_to_nw_id(msg, src, dst, dst_nw_id, out_port, eth_type)
         else:
-            self._flood_to_nw_id(msg, src, dst, dst_nw_id)
+            self._flood_to_nw_id(msg, src, dst, dst_nw_id, eth_type)
 
-    def _modflow_and_drop_packet(self, msg, src, dst):
+    def _modflow_and_drop_packet(self, msg, src, dst, eth_type):
         LOG.info("installing flow for dropping packet")
         datapath = msg.datapath
         in_port = msg.in_port
@@ -247,9 +252,9 @@ class SimpleIsolation(app_manager.RyuApp):
         if bond_id:
             for port in self.port_bond.ports_in_bond(bond_id):
                 msg.in_port = port
-                self._install_modflow(msg, src, dst, [])
+                self._install_modflow(msg, src, dst, [], eth_type)
         else:
-            self._install_modflow(msg, src, dst, [])
+            self._install_modflow(msg, src, dst, [], eth_type)
 
         datapath.send_packet_out(msg.buffer_id, in_port, [])
 
@@ -265,10 +270,21 @@ class SimpleIsolation(app_manager.RyuApp):
         msg = ev.msg
         datapath = msg.datapath
         ofproto = datapath.ofproto
+        
+        #if datapath.id == 0x80027513556:
+        #   return
 
         dst, src, _eth_type = struct.unpack_from('!6s6sH', buffer(msg.data), 0)
+        if self.nw.arp_enabled and _eth_type == 0x0806:
+           #arp is not handled by this application
+           LOG.info("main app: ignore arp (%s, %s)", hex(datapath.id), msg.in_port)
+           return
+
         LOG.info("packet in from port %s of dpid %s", msg.in_port, hex(datapath.id))
         LOG.info("src mac %s, dst mac %s", haddr_to_str(src), haddr_to_str(dst))
+        if _eth_type == 0x0800:
+            temp1, temp2, temp3, src_ip, dst_ip = struct.unpack_from('!LLL4s4s', buffer(msg.data), 14)
+            LOG.info("ip packet: src = %s, dst = %s", mac.ipaddr_to_str(src_ip), mac.ipaddr_to_str(dst_ip))
 
         try:
             port_nw_id = self.nw.get_network(datapath.id, msg.in_port)
@@ -285,6 +301,13 @@ class SimpleIsolation(app_manager.RyuApp):
                 # allow external -> known nw id change
                 self.mac2net.add_mac(src, port_nw_id, NW_ID_EXTERNAL)
                 self.api_db.addMAC(port_nw_id, haddr_to_str(src))
+                if _eth_type == 0x0800 and (port_nw_id == NW_ID_PXE or port_nw_id == NW_ID_PXE_CTRL
+                     or port_nw_id == NW_ID_MGMT or port_nw_id == NW_ID_MGMT_CTRL):  
+                   #only IP packet for above networks
+                   temp1, temp2, temp3, src_ip, dst_ip = struct.unpack_from('!LLL4s4s', buffer(msg.data), 14)
+                   LOG.info("ip packet: src = %s, dst = %s", mac.ipaddr_to_str(src_ip), mac.ipaddr_to_str(dst_ip))
+                   if "0.0.0.0" != mac.ipaddr_to_str(src_ip):
+                      self.mac2port.port_add(datapath, msg.in_port, src, src_ip)
             except MacAddressDuplicated:
                 LOG.warn('mac address %s is already in use.'
                          ' So (dpid %s, port %s) can not use it',
@@ -302,6 +325,7 @@ class SimpleIsolation(app_manager.RyuApp):
             # new port.
             rule = nx_match.ClsRule()
             rule.set_dl_dst(src)
+            rule.set_dl_type(_eth_type)
             datapath.send_flow_mod(rule=rule,
                                    cookie=0,
                                    command=ofproto.OFPFC_DELETE,
@@ -372,13 +396,13 @@ class SimpleIsolation(app_manager.RyuApp):
 
         if src_nw_id == NW_ID_PXE or src_nw_id == NW_ID_PXE_CTRL:
             self.pktHandling_PXE(msg, datapath, ofproto, dst, src, broadcast,
-                                    port_nw_id, src_nw_id, dst_nw_id, out_port)
+                                    port_nw_id, src_nw_id, dst_nw_id, out_port, _eth_type)
         elif src_nw_id == NW_ID_MGMT or src_nw_id == NW_ID_MGMT_CTRL:
             self.pktHandling_MGMT(msg, datapath, ofproto, dst, src, broadcast,
-                                    port_nw_id, src_nw_id, dst_nw_id, out_port)
+                                    port_nw_id, src_nw_id, dst_nw_id, out_port, _eth_type)
         else:
             self.pktHandling_BaseCase(msg, datapath, ofproto, dst, src, broadcast,
-                                        port_nw_id, src_nw_id, dst_nw_id, out_port)
+                                        port_nw_id, src_nw_id, dst_nw_id, out_port, _eth_type)
         LOG.info("\n")
 
     def _port_add(self, ev):
@@ -463,6 +487,9 @@ class SimpleIsolation(app_manager.RyuApp):
         reason = msg.reason
         ofproto = msg.datapath.ofproto
 
+        #if msg.datapath.id == 0x80027513556:
+        #   return
+
         if reason == ofproto.OFPPR_ADD:
             self._port_add(ev)
         elif reason == ofproto.OFPPR_DELETE:
@@ -475,7 +502,7 @@ class SimpleIsolation(app_manager.RyuApp):
     # ===========================================================
 
     def pktHandling_BaseCase(self, msg, datapath, ofproto, dst, src, broadcast,
-                                    port_nw_id, src_nw_id, dst_nw_id, out_port):
+                                    port_nw_id, src_nw_id, dst_nw_id, out_port, eth_type):
         #
         # there are several combinations:
         # in_port: known nw_id, external, unknown nw,
@@ -499,9 +526,9 @@ class SimpleIsolation(app_manager.RyuApp):
         if port_nw_id != NW_ID_EXTERNAL and port_nw_id != NW_ID_UNKNOWN:
             if broadcast:
                 # flood to all ports of external or src_nw_id
-                self._flood_to_nw_id(msg, src, dst, src_nw_id)
+                self._flood_to_nw_id(msg, src, dst, src_nw_id, eth_type)
             elif src_nw_id == NW_ID_EXTERNAL:
-                self._modflow_and_drop_packet(msg, src, dst)
+                self._modflow_and_drop_packet(msg, src, dst, eth_type)
                 return
             elif src_nw_id == NW_ID_UNKNOWN:
                 self._drop_packet(msg)
@@ -513,13 +540,13 @@ class SimpleIsolation(app_manager.RyuApp):
                 # or
                 # flood to all ports of external or src_nw_id
                 self._learned_mac_or_flood_to_nw_id(msg, src, dst,
-                                                    src_nw_id, out_port)
+                                                    src_nw_id, out_port, eth_type)
 
         elif port_nw_id == NW_ID_EXTERNAL:
             if src_nw_id != NW_ID_EXTERNAL and src_nw_id != NW_ID_UNKNOWN:
                 if broadcast:
                     # flood to all ports of external or src_nw_id
-                    self._flood_to_nw_id(msg, src, dst, src_nw_id)
+                    self._flood_to_nw_id(msg, src, dst, src_nw_id, eth_type)
                 elif (dst_nw_id != NW_ID_EXTERNAL and
                       dst_nw_id != NW_ID_UNKNOWN):
                     if src_nw_id == dst_nw_id:
@@ -529,7 +556,7 @@ class SimpleIsolation(app_manager.RyuApp):
                         # flood to all ports of external or src_nw_id
                         self._learned_mac_or_flood_to_nw_id(msg, src, dst,
                                                             src_nw_id,
-                                                            out_port)
+                                                            out_port, eth_type)
                     else:
                         # should not occur?
                         LOG.debug("should this case happen?")
@@ -539,13 +566,13 @@ class SimpleIsolation(app_manager.RyuApp):
                     # or
                     # flood to all ports of external or src_nw_id
                     self._learned_mac_or_flood_to_nw_id(msg, src, dst,
-                                                        src_nw_id, out_port)
+                                                        src_nw_id, out_port, eth_type)
                 else:
                     assert dst_nw_id == NW_ID_UNKNOWN
                     LOG.debug("Unknown dst_nw_id")
                     self._drop_packet(msg)
             elif src_nw_id == NW_ID_EXTERNAL:
-                self._modflow_and_drop_packet(msg, src, dst)
+                self._modflow_and_drop_packet(msg, src, dst, eth_type)
             else:
                 # should not occur?
                 assert src_nw_id == NW_ID_UNKNOWN
@@ -557,8 +584,9 @@ class SimpleIsolation(app_manager.RyuApp):
             # LOG.debug("Unknown port_nw_id")
 
     def pktHandling_PXE(self, msg, datapath, ofproto, dst, src, broadcast,
-                                port_nw_id, src_nw_id, dst_nw_id, out_port):
+                                port_nw_id, src_nw_id, dst_nw_id, out_port, eth_type):
         # Isolate between controller and each BM servers
+
         in_port = msg.in_port
         in_bond_id = self.port_bond.get_bond_id(datapath.id, msg.in_port)
         out_bond_id = self.port_bond.get_bond_id(datapath.id, out_port)
@@ -580,22 +608,22 @@ class SimpleIsolation(app_manager.RyuApp):
                 if in_bond_id:
                     for port in self.port_bond.ports_in_bond(in_bond_id):
                         msg.in_port = port
-                        self._install_modflow(msg, src, dst, actions)
+                        self._install_modflow(msg, src, dst, actions, eth_type)
                 else:
-                    self._install_modflow(msg, src, dst, actions)
+                    self._install_modflow(msg, src, dst, actions, eth_type)
         else:
             # Check if output port is allowed (if source is PXE_CTRL network, don't care)
             if src_nw_id == NW_ID_PXE_CTRL or src_nw_id != dst_nw_id:
                 # Install unicast flows and retrieve resulting actions list
-                actions = self._install_unicast_flow(msg, src, dst, out_port)
+                actions = self._install_unicast_flow(msg, src, dst, out_port, eth_type)
             else:
                 # Installs rule to drop if actions list is empty
-                self._install_modflow(msg, src, dst, actions)
+                self._install_modflow(msg, src, dst, actions, eth_type)
 
         datapath.send_packet_out(msg.buffer_id, in_port, actions)
 
     def pktHandling_MGMT(self, msg, datapath, ofproto, dst, src, broadcast,
-                                port_nw_id, src_nw_id, dst_nw_id, out_port):
+                                port_nw_id, src_nw_id, dst_nw_id, out_port, eth_type):
         actions = []
         if broadcast or out_port is None:
             out_port_list = []
@@ -611,7 +639,7 @@ class SimpleIsolation(app_manager.RyuApp):
 
             if broadcast:
                 # If broadcasting, write mod flow into switch
-                self._install_modflow(msg, src, dst, actions)
+                self._install_modflow(msg, src, dst, actions, eth_type)
                 datapath.send_packet_out(msg.buffer_id, msg.in_port, actions)
             else:
                 # Simply flooding; Don't bother with mod flow
@@ -622,7 +650,7 @@ class SimpleIsolation(app_manager.RyuApp):
                 actions.append(datapath.ofproto_parser.OFPActionOutput(out_port))
 
             # Installs rule to drop if actions list is empty
-            self._install_modflow(msg, src, dst, actions)
+            self._install_modflow(msg, src, dst, actions, eth_type)
             datapath.send_packet_out(msg.buffer_id, msg.in_port, actions)
 
 
