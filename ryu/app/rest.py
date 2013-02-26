@@ -1004,39 +1004,39 @@ class restapi(app_manager.RyuApp):
         src_str = haddr_to_str(src)
         dpid_str = dpid_to_str(dpid)
 
-	# find the source
-	if not src_str in self.device:
-		self.device.setdefault(src_str, {})
-		self.device[src_str]['ipv4'] = []
-		self.device[src_str]['attachmentPoint'] = []
-		ap = {}
-		ap['switchDPID'] = dpid_str
-		ap['port'] = msg.in_port
-		self.device[src_str]['attachmentPoint'].append(ap)
-	else:
-		d = self.device[src_str]
-		# Update attachment point
-		aps = d['attachmentPoint']
-#		exist = None
-#		for ap in aps:
-#			if ap['switchDPID'] == dpid_str and ap['port'] == msg.in_port:
-#				exist = ap
-#				break
+        # find the source
+        if not src_str in self.device:
+            self.device.setdefault(src_str, {})
+            self.device[src_str]['ipv4'] = []
+            self.device[src_str]['attachmentPoint'] = []
+            ap = {}
+            ap['switchDPID'] = dpid_str
+            ap['port'] = msg.in_port
+            self.device[src_str]['attachmentPoint'].append(ap)
+        else:
+            d = self.device[src_str]
+            # Update attachment point
+            aps = d['attachmentPoint']
+    #		exist = None
+    #		for ap in aps:
+    #			if ap['switchDPID'] == dpid_str and ap['port'] == msg.in_port:
+    #				exist = ap
+    #				break
 
-#		if exist is None:
-#			ap = {}
-#			ap['switchDPID'] = dpid_str
-#			ap['port'] = msg.in_port
-#			aps.append(ap)
+    #		if exist is None:
+    #			ap = {}
+    #			ap['switchDPID'] = dpid_str
+    #			ap['port'] = msg.in_port
+    #			aps.append(ap)
 
-		# Update ip information
-		if _eth_type == 0x0800:
-			ipd = d['ipv4']
-			src_ip, dst_ip = struct.unpack_from('!4s4s',buffer(msg.data), 26)
-			src_ip_str = self.ip_to_str(src_ip)
-			if not src_ip_str in set(ipd):
-				ipd.append(src_ip_str)
-			#LOG.info("IPv4 update %s for %s", src_ip_str, src_str )
+            # Update ip information
+            if _eth_type == 0x0800:
+                ipd = d['ipv4']
+                src_ip, dst_ip = struct.unpack_from('!4s4s',buffer(msg.data), 26)
+                src_ip_str = self.ip_to_str(src_ip)
+                if not src_ip_str in set(ipd):
+                    ipd.append(src_ip_str)
+                #LOG.info("IPv4 update %s for %s", src_ip_str, src_str )
 
 	
     # edit(eliot)
