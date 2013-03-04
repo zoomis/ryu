@@ -109,7 +109,7 @@ class StatsController(ControllerBase):
         body = json.dumps(ports)
         return (Response(content_type='application/json', body=body))
 
-    def push_flow_entry(self, req, **_kwargs):
+    def mod_flow_entry(self, req, cmd, **_kwargs):
         try:
             flow = eval(req.body)
         except SyntaxError:
@@ -121,8 +121,17 @@ class StatsController(ControllerBase):
         if dp is None:
             return Response(status=404)
 
+        if cmd == 'add':
+            cmd = dp.ofproto.OFPFC_ADD
+        elif cmd == 'modify':
+            cmd = dp.ofproto.OFPFC_MODIFY
+        elif cmd == 'delete':
+            cmd = dp.ofproto.OFPFC_DELETE
+        else:
+            return Response(status=404)
+
         if dp.ofproto.OFP_VERSION == ofproto_v1_0.OFP_VERSION:
-            ofctl_v1_0.push_flow_entry(dp, flow)
+            ofctl_v1_0.mod_flow_entry(dp, flow, cmd)
         else:
             LOG.debug('Unsupported OF protocol')
             return Response(status=501)
@@ -142,6 +151,48 @@ class StatsController(ControllerBase):
 
         return Response(status=200)
 
+class PacketController(ControllerBase):
+    def __init__(self, req, link, data, **config):
+        super(PacketController, self).__init__(req, link, data, **config)
+        self.dpset = data.get('dpset')
+        assert self.dpset is not None
+
+    def output_packet(self, req, dpid, buffer_id, in_port):
+        dpid = int(dpid)
+        buffer_id = int(buffer_id)
+        in_port = int(in_port)
+
+        try:
+            out_port_list = eval(req.body)
+            assert type(out_port_list) is list
+        except SyntaxError:
+            LOG.debug('invalid syntax %s', req.body)
+            return Response(status=400)
+
+        datapath = self.dpset.get(dpid)
+        assert datapath is not None
+        ofproto = datapath.ofproto
+
+        actions = []
+        for out_port in out_port_list:
+            actions.append(datapath.ofproto_parser.OFPActionOutput(out_port))
+
+        out = datapath.ofproto_parser.OFPPacketOut(
+            datapath=datapath, buffer_id=buffer_id, in_port=in_port,
+            actions=actions)
+        datapath.send_msg(out)
+        return Response(status=200)
+
+    def drop_packet(self, req, dpid, buffer_id, in_port):
+        dpid = int(dpid)
+        buffer_id = int(buffer_id)
+        in_port = int(in_port)
+
+        datapath = self.dpset.get(dpid)
+        assert datapath is not None
+
+        datapath.send_packet_out(buffer_id, in_port, [])
+        return Response(status=200)
 
 class RestStatsApi(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_0.OFP_VERSION]
@@ -182,13 +233,24 @@ class RestStatsApi(app_manager.RyuApp):
                        controller=StatsController, action='get_port_stats',
                        conditions=dict(method=['GET']))
 
-        uri = path + '/flowentry'
+        uri = path + '/flowentry/{cmd}'
         mapper.connect('stats', uri,
-                       controller=StatsController, action='push_flow_entry',
+                       controller=StatsController, action='mod_flow_entry',
                        conditions=dict(method=['POST']))
         uri = uri + '/clear/{dpid}'
         mapper.connect('stats', uri,
                        controller=StatsController, action='delete_flow_entry',
+                       conditions=dict(method=['DELETE']))
+
+        # For Janus -> Ryu APIs
+        wsgi.registory['PacketController'] = {'dpset' : self.dpset}
+        uri = '/v1.0/packetAction'
+        mapper.connect('pktCtl', uri + '/{dpid}/output/{buffer_id}_{in_port}',
+                       controller=PacketController, action='output_packet',
+                       conditions=dict(method=['PUT']))
+
+        mapper.connect('pktCtl', uri + '/{dpid}/drop/{buffer_id}_{in_port}',
+                       controller=PacketController, action='drop_packet',
                        conditions=dict(method=['DELETE']))
 
     def stats_reply_handler(self, ev):

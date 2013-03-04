@@ -102,7 +102,7 @@ def to_match(dp, attrs):
             wildcards &= ~ofp.OFPFW_IN_PORT
         elif key == 'dl_src':
             dl_src = haddr_to_bin(value)
-            wildcards &= ~ofp.OFPFW_DL_DST
+            wildcards &= ~ofp.OFPFW_DL_SRC
         elif key == 'dl_dst':
             dl_dst = haddr_to_bin(value)
             wildcards &= ~ofp.OFPFW_DL_DST
@@ -261,7 +261,7 @@ def get_port_stats(dp, waiters):
     return ports
 
 
-def push_flow_entry(dp, flow):
+def mod_flow_entry(dp, flow, cmd):
     cookie = int(flow.get('cookie', 0))
     priority = int(flow.get('priority',
                             dp.ofproto.OFP_DEFAULT_PRIORITY))
@@ -270,12 +270,13 @@ def push_flow_entry(dp, flow):
     hard_timeout = int(flow.get('hard_timeout', 0))
     actions = to_actions(dp, flow.get('actions', {}))
     match = to_match(dp, flow.get('match', {}))
+    out_port = int(flow.get('out_port', ofproto_v1_0.OFPP_NONE))
 
     flow_mod = dp.ofproto_parser.OFPFlowMod(
         datapath=dp, match=match, cookie=cookie,
-        command=dp.ofproto.OFPFC_ADD, idle_timeout=idle_timeout,
-        hard_timeout=hard_timeout, priority=priority, flags=flags,
-        actions=actions)
+        command=cmd, idle_timeout=idle_timeout,
+        hard_timeout=hard_timeout, priority=priority,
+        out_port=out_port, flags=flags, actions=actions)
 
     dp.send_msg(flow_mod)
 
