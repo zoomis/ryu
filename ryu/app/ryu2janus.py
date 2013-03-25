@@ -1,6 +1,6 @@
 # vim: tabstop=4 shiftwidth=4 softtabstop=4
 #
-# Copyright (C) 2012, The SAVI Project.
+# Copyright (C) 2013, The SAVI Project.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ from ryu.controller.handler import set_ev_cls
 from ryu.ofproto import ofproto_v1_0
 from ryu.lib.mac import haddr_to_str
 from janus.network.of_controller.janus_of_consts import JANEVENTS, JANPORTREASONS
+from janus.network.of_controller.event_contents import EventContents
 
 LOG = logging.getLogger('ryu.app.ryu2janus')
 
@@ -98,12 +99,32 @@ class Ryu2JanusForwarding(app_manager.RyuApp):
         datapath = msg.datapath
         ofproto = datapath.ofproto
 
-        dst, src, _eth_type = struct.unpack_from('!6s6sH', buffer(msg.data), 0)
-        in_port = msg.in_port
+        #dst, src, _eth_type = struct.unpack_from('!6s6sH', buffer(msg.data), 0)
+        #in_port = msg.in_port
+
+        contents = EventContents()
+        contents.set_dpid(datapath.id)
+        contents.set_buff_id(msg.buffer_id)
+
+        dl_dst, dl_src, _eth_type = struct.unpack_from('!6s6sH', buffer(msg.data), 0)
+        contents.set_in_port(msg.in_port)
+        contents.set_dl_dst(haddr_to_str(dl_dst))
+        contents.set_dl_src(haddr_to_str(dl_src))
+        contents.set_eth_type(_eth_type)
+
+        # Comment for now, used for arp-less stuff later
+        #if _eth_type == 0x806: # ARP
+        #    HTYPE, PTYPE, HLEN, PLEN, OPER, SHA, SPA, THA, TPA = struct.unpack_from('!HHbbH6s4s6s4s', buffer(msg.data), 14)
+        #    contents.set_arp_oper(OPER)
+        #    contents.set_arp_sha(haddr_to_str(SHA))
+        #    contents.set_arp_spa(ipaddr_to_str(SPA))
+        #    contents.set_arp_tha(haddr_to_str(THA))
+        #    contents.set_arp_tpa(ipaddr_to_str(TPA))
 
         packet_in_url = '/of_event/%s' % JANEVENTS.JAN_EV_PACKETIN
         method = 'POST'
-        body = "{'datapath_id': %s, 'buffer_id': %s, 'in_port': %s, 'dl_src': '%s', 'dl_dst': '%s'}" % (datapath.id, msg.buffer_id, in_port, haddr_to_str(src), haddr_to_str(dst))
+        #body = "{'datapath_id': %s, 'buffer_id': %s, 'in_port': %s, 'dl_src': '%s', 'dl_dst': '%s'}" % (datapath.id, msg.buffer_id, in_port, haddr_to_str(src), haddr_to_str(dst))
+        body = json.dumps(contents.getContents())
         header = {"Content-Type": "application/json"}
 
         url = self.url_prefix + packet_in_url

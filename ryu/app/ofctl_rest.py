@@ -237,7 +237,7 @@ class RestStatsApi(app_manager.RyuApp):
         mapper.connect('stats', uri,
                        controller=StatsController, action='mod_flow_entry',
                        conditions=dict(method=['POST']))
-        uri = uri + '/clear/{dpid}'
+        uri = path + '/flowentry/clear/{dpid}'
         mapper.connect('stats', uri,
                        controller=StatsController, action='delete_flow_entry',
                        conditions=dict(method=['DELETE']))
