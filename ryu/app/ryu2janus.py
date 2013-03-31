@@ -42,7 +42,7 @@ class Ryu2JanusForwarding(app_manager.RyuApp):
         # Janus address
         self.host = '10.20.32.10'
         self.port = 8090
-        self.url_prefix = '/v1.0'
+        self.url_prefix = '/v1/network'
 
     def _forward2Controller(self, method, url, body=None, headers=None):
         conn = httplib.HTTPConnection(self.host, self.port)
@@ -98,9 +98,6 @@ class Ryu2JanusForwarding(app_manager.RyuApp):
         msg = ev.msg
         datapath = msg.datapath
         ofproto = datapath.ofproto
-
-        #dst, src, _eth_type = struct.unpack_from('!6s6sH', buffer(msg.data), 0)
-        #in_port = msg.in_port
 
         contents = EventContents()
         contents.set_dpid(datapath.id)
