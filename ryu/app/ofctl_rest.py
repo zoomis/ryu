@@ -165,7 +165,7 @@ class PacketController(ControllerBase):
         try:
             #out_port_list = eval(req.body)
             output_dict = eval(req.body)
-            out_port_list = output_dict.get('out_ports')
+            out_port_list = output_dict.get('out_port_list')
             mydata = output_dict.get('data')
             assert type(output_dict) is dict
             #TODO: put assert for mydata, but sometimes data might be Null
