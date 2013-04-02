@@ -163,7 +163,13 @@ class PacketController(ControllerBase):
         in_port = int(in_port)
 
         try:
-            out_port_list = eval(req.body)
+            #out_port_list = eval(req.body)
+            output_dict = eval(req.body)
+            out_port_list = output_dict.get('out_ports')
+            mydata = output_dict.get('data')
+            assert type(output_dict) is dict
+            #TODO: put assert for mydata, but sometimes data might be Null
+            #assert type(mydata) is str
             assert type(out_port_list) is list
         except SyntaxError:
             LOG.debug('invalid syntax %s', req.body)
@@ -177,10 +183,14 @@ class PacketController(ControllerBase):
         for out_port in out_port_list:
             actions.append(datapath.ofproto_parser.OFPActionOutput(out_port))
 
+        #NOTE: commented by Hesam to test sending some data to dpids (OF switches).
+        '''
         out = datapath.ofproto_parser.OFPPacketOut(
             datapath=datapath, buffer_id=buffer_id, in_port=in_port,
             actions=actions)
         datapath.send_msg(out)
+        '''
+        datapath.send_packet_out(actions=actions, data=mydata)
         return Response(status=200)
 
     def drop_packet(self, req, dpid, buffer_id, in_port):

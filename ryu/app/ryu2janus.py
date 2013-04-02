@@ -40,7 +40,7 @@ class Ryu2JanusForwarding(app_manager.RyuApp):
         self.mac_to_port = {}
 
         # Janus address
-        self.host = '10.20.32.10'
+        self.host = '127.0.0.1'
         self.port = 8090
         self.url_prefix = '/v1.0'
 
