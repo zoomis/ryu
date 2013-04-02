@@ -1,6 +1,6 @@
 # vim: tabstop=4 shiftwidth=4 softtabstop=4
 #
-# Copyright (C) 2012, The SAVI Project.
+# Copyright (C) 2013, The SAVI Project.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -42,7 +42,7 @@ class Ryu2JanusForwarding(app_manager.RyuApp):
         # Janus address
         self.host = '127.0.0.1'
         self.port = 8090
-        self.url_prefix = '/v1.0'
+        self.url_prefix = '/v1/network'
 
     def _forward2Controller(self, method, url, body=None, headers=None):
         conn = httplib.HTTPConnection(self.host, self.port)
@@ -100,6 +100,8 @@ class Ryu2JanusForwarding(app_manager.RyuApp):
         ofproto = datapath.ofproto
 
         contents = EventContents()
+        contents.set_dpid(datapath.id)
+        contents.set_buff_id(msg.buffer_id)
 
         dl_dst, dl_src, _eth_type = struct.unpack_from('!6s6sH', buffer(msg.data), 0)
         contents.set_in_port(msg.in_port)
