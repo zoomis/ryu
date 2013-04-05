@@ -14,6 +14,11 @@
 # limitations under the License.
 
 import logging
+import ctypes
+import struct
+import datetime
+import calendar
+import gflags
 
 import json
 from webob import Response
@@ -25,7 +30,9 @@ from ryu.controller.handler import MAIN_DISPATCHER
 from ryu.controller.handler import set_ev_cls
 from ryu.ofproto import ofproto_v1_0
 from ryu.lib import ofctl_v1_0
+from ryu.lib.mac import haddr_to_bin, ipaddr_to_bin
 from ryu.app.wsgi import ControllerBase, WSGIApplication
+from janus.network.of_controller import event_contents
 
 
 LOG = logging.getLogger('ryu.app.ofctl_rest')
@@ -190,7 +197,38 @@ class PacketController(ControllerBase):
             actions=actions)
         datapath.send_msg(out)
         '''
-        datapath.send_packet_out(actions=actions, data=mydata)
+        if mydata is not None:
+            mydata = eval(mydata)
+            print '\n\n\n\n'
+            print type(mydata)
+            print '\n\n\n\n\n\n\n\n\n\nnooooooooooooooooooooooooooooooooooooooooooooooooooooomydata is\n\n\n %s \n\n\n\n' % mydata
+            #dpid = mydata.get(event_contents.DPID)
+            #buffer_id = mydata.get(event_contents.BUFF_ID)
+            #in_port = mydata.get(event_contents.IN_PORT)
+            src = mydata.get(event_contents.DL_SRC)
+            dst = mydata.get(event_contents.DL_DST)
+            _eth_type = mydata.get(event_contents.ETH_TYPE)
+            HTYPE = mydata.get(event_contents.ARP_HTYPE)
+            PTYPE = mydata.get(event_contents.ARP_PTYPE)
+            HLEN = mydata.get(event_contents.ARP_HLEN)
+            PLEN = mydata.get(event_contents.ARP_PLEN)
+            OPER = mydata.get(event_contents.ARP_OPER)
+            SPA = mydata.get(event_contents.ARP_SPA)
+            SHA = mydata.get(event_contents.ARP_SHA)
+            TPA = mydata.get(event_contents.ARP_TPA)
+            THA = mydata.get(event_contents.ARP_THA)
+
+            mybuffer = ctypes.create_string_buffer(42)
+
+            struct.pack_into('!6s6sHHHbbH6s4s6s4s', mybuffer, 0, haddr_to_bin(src), haddr_to_bin(dst), _eth_type, HTYPE, PTYPE, HLEN, PLEN, OPER, haddr_to_bin(SHA), ipaddr_to_bin(SPA), haddr_to_bin(THA), ipaddr_to_bin(TPA))
+            #print '\n\n\n'
+            HTYPE, PTYPE, HLEN, PLEN, OPER, SHA, SPA, THA, TPA = struct.unpack_from('!HHbbH6s4s6s4s', buffer(mybuffer), 14)
+            print 'HTYPE = %d, PTYPE = %d, HLEN = %d, PLEN = %d, OPER = %d, SHA = %s, SPA = %s, THA = %s, TPA = %s' % (
+                    HTYPE, PTYPE, HLEN, PLEN, OPER, SHA, SPA, THA, TPA)
+
+        else:
+            mybuffer = None
+        datapath.send_packet_out(actions=actions, data=mybuffer)
         return Response(status=200)
 
     def drop_packet(self, req, dpid, buffer_id, in_port):

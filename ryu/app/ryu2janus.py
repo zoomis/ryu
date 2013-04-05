@@ -26,7 +26,7 @@ from ryu.controller import ofp_event
 from ryu.controller.handler import MAIN_DISPATCHER, CONFIG_DISPATCHER
 from ryu.controller.handler import set_ev_cls
 from ryu.ofproto import ofproto_v1_0
-from ryu.lib.mac import haddr_to_str
+from ryu.lib.mac import haddr_to_str, ipaddr_to_str
 from janus.network.of_controller.janus_of_consts import JANEVENTS, JANPORTREASONS
 from janus.network.of_controller.event_contents import EventContents
 
@@ -116,6 +116,7 @@ class Ryu2JanusForwarding(app_manager.RyuApp):
             contents.set_arp_hlen(HLEN)
             contents.set_arp_plen(PLEN)
             contents.set_arp_oper(OPER)
+
             contents.set_arp_sha(haddr_to_str(SHA))
             contents.set_arp_spa(ipaddr_to_str(SPA))
             contents.set_arp_tha(haddr_to_str(THA))
