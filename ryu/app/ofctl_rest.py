@@ -190,21 +190,8 @@ class PacketController(ControllerBase):
         for out_port in out_port_list:
             actions.append(datapath.ofproto_parser.OFPActionOutput(out_port))
 
-        #NOTE: commented by Hesam to test sending some data to dpids (OF switches).
-        '''
-        out = datapath.ofproto_parser.OFPPacketOut(
-            datapath=datapath, buffer_id=buffer_id, in_port=in_port,
-            actions=actions)
-        datapath.send_msg(out)
-        '''
         if mydata is not None:
             mydata = eval(mydata)
-            print '\n\n\n\n'
-            print type(mydata)
-            print '\n\n\n\n\n\n\n\n\n\nnooooooooooooooooooooooooooooooooooooooooooooooooooooomydata is\n\n\n %s \n\n\n\n' % mydata
-            #dpid = mydata.get(event_contents.DPID)
-            #buffer_id = mydata.get(event_contents.BUFF_ID)
-            #in_port = mydata.get(event_contents.IN_PORT)
             src = mydata.get(event_contents.DL_SRC)
             dst = mydata.get(event_contents.DL_DST)
             _eth_type = mydata.get(event_contents.ETH_TYPE)
@@ -220,11 +207,11 @@ class PacketController(ControllerBase):
 
             mybuffer = ctypes.create_string_buffer(42)
 
-            struct.pack_into('!6s6sHHHbbH6s4s6s4s', mybuffer, 0, haddr_to_bin(src), haddr_to_bin(dst), _eth_type, HTYPE, PTYPE, HLEN, PLEN, OPER, haddr_to_bin(SHA), ipaddr_to_bin(SPA), haddr_to_bin(THA), ipaddr_to_bin(TPA))
-            #print '\n\n\n'
-            HTYPE, PTYPE, HLEN, PLEN, OPER, SHA, SPA, THA, TPA = struct.unpack_from('!HHbbH6s4s6s4s', buffer(mybuffer), 14)
-            print 'HTYPE = %d, PTYPE = %d, HLEN = %d, PLEN = %d, OPER = %d, SHA = %s, SPA = %s, THA = %s, TPA = %s' % (
-                    HTYPE, PTYPE, HLEN, PLEN, OPER, SHA, SPA, THA, TPA)
+            struct.pack_into('!6s6sHHHbbH6s4s6s4s',
+                             mybuffer, 0, haddr_to_bin(src), haddr_to_bin(dst),
+                             _eth_type, HTYPE, PTYPE, HLEN, PLEN, OPER,
+                             haddr_to_bin(SHA), ipaddr_to_bin(SPA),
+                             haddr_to_bin(THA), ipaddr_to_bin(TPA))
 
         else:
             mybuffer = None
