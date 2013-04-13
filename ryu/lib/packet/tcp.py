@@ -14,10 +14,9 @@
 # limitations under the License.
 
 import struct
-import socket
+
 from . import packet_base
 from . import packet_utils
-import ipv4
 
 
 class tcp(packet_base.PacketBase):
@@ -66,14 +65,6 @@ class tcp(packet_base.PacketBase):
 
         if self.csum == 0:
             length = self.length + len(payload)
-            if prev.version == 4:
-                ph = struct.pack('!IIBBH', prev.src, prev.dst, 0, 6, length)
-            elif prev.version == 6:
-                ph = struct.pack('!16s16sBBH', prev.src, prev.dst, 0, 6,
-                                 length)
-            f = ph + h + payload
-            if len(f) % 2:
-                f += '\x00'
-            self.csum = socket.htons(packet_utils.checksum(f))
+            self.csum = packet_utils.checksum_ip(prev, length, h + payload)
             struct.pack_into('!H', h, 16, self.csum)
         return h

@@ -18,3 +18,17 @@
 class EventBase(object):
     # Nothing yet
     pass
+
+
+class EventRequestBase(EventBase):
+    def __init__(self):
+        super(EventRequestBase, self).__init__()
+        self.dst = None  # app.name of provide the event.
+        self.src = None
+        self.sync = False
+
+
+class EventReplyBase(EventBase):
+    def __init__(self, dst):
+        super(EventReplyBase, self).__init__()
+        self.dst = dst

@@ -246,7 +246,7 @@ class OFPGetConfigReply(MsgBase):
         msg = super(OFPGetConfigReply, cls).parser(datapath, version, msg_type,
                                                    msg_len, xid, buf)
         msg.flags, msg.miss_send_len = struct.unpack_from(
-            ofproto_v1_3.OFP_SWITCH_CONFIG_PACK_STR, buf,
+            ofproto_v1_3.OFP_SWITCH_CONFIG_PACK_STR, msg.buf,
             ofproto_v1_3.OFP_HEADER_SIZE)
         return msg
 
@@ -1378,7 +1378,7 @@ class OFPFlowRemoved(MsgBase):
         offset = (ofproto_v1_3.OFP_FLOW_REMOVED_SIZE -
                   ofproto_v1_3.OFP_MATCH_SIZE)
 
-        msg.match = OFPMatch(buf, offset)
+        msg.match = OFPMatch.parser(msg.buf, offset)
 
         return msg
 
@@ -1390,7 +1390,9 @@ class OFPPort(collections.namedtuple('OFPPort', (
     @classmethod
     def parser(cls, buf, offset):
         port = struct.unpack_from(ofproto_v1_3.OFP_PORT_PACK_STR, buf, offset)
-        return cls(*port)
+        ofpport = cls(*port)
+        ofpport.length = ofproto_v1_3.OFP_PORT_SIZE
+        return ofpport
 
 
 @_register_parser
@@ -1787,7 +1789,7 @@ class OFPActionPushMpls(OFPAction):
 
     def serialize(self, buf, offset):
         msg_pack_into(ofproto_v1_3.OFP_ACTION_PUSH_PACK_STR, buf, offset,
-                      self.ethertype)
+                      self.type, self.len, self.ethertype)
 
 
 @OFPAction.register_action_type(ofproto_v1_3.OFPAT_POP_VLAN,
@@ -1817,14 +1819,15 @@ class OFPActionPopMpls(OFPAction):
 
     def serialize(self, buf, offset):
         msg_pack_into(ofproto_v1_3.OFP_ACTION_POP_MPLS_PACK_STR, buf, offset,
-                      self.ethertype)
+                      self.type, self.len, self.ethertype)
 
 
 @OFPAction.register_action_type(ofproto_v1_3.OFPAT_SET_FIELD,
                                 ofproto_v1_3.OFP_ACTION_SET_FIELD_SIZE)
 class OFPActionSetField(OFPAction):
-    def __init__(self):
+    def __init__(self, field):
         super(OFPActionSetField, self).__init__()
+        set.field = field
 
     @classmethod
     def parser(cls, buf, offset):
@@ -1891,6 +1894,19 @@ class OFPBucket(object):
 
         return msg
 
+    def serialize(self, buf, offset):
+        action_offset = offset + ofproto_v1_3.OFP_BUCKET_SIZE
+        action_len = 0
+        for a in self.actions:
+            a.serialize(buf, action_offset)
+            action_offset += a.len
+            action_len += a.len
+
+        self.len = utils.round_up(ofproto_v1_3.OFP_BUCKET_SIZE + action_len,
+                                  8)
+        msg_pack_into(ofproto_v1_3.OFP_BUCKET_PACK_STR, buf, offset,
+                      self.len, self.weight, self.watch_port, self.watch_group)
+
 
 @_set_msg_type(ofproto_v1_3.OFPT_GROUP_MOD)
 class OFPGroupMod(MsgBase):
@@ -1906,9 +1922,9 @@ class OFPGroupMod(MsgBase):
                       ofproto_v1_3.OFP_HEADER_SIZE,
                       self.command, self.type, self.group_id)
 
-        offset = ofproto_v1_3.OFP_HEADER_SIZE + ofproto_v1_3.OFP_GROUP_MOD_SIZE
+        offset = ofproto_v1_3.OFP_GROUP_MOD_SIZE
         for b in self.buckets:
-            b.serialize(self, buf, offset)
+            b.serialize(self.buf, offset)
             offset += b.len
 
 
@@ -1959,7 +1975,7 @@ class OFPMultipartRequest(MsgBase):
         self.type = self.__class__.cls_stats_type
         self.flags = flags
 
-    def _serialize_stats_body():
+    def _serialize_stats_body(self):
         pass
 
     def _serialize_body(self):
@@ -2158,13 +2174,14 @@ class OFPAggregateStats(collections.namedtuple('OFPAggregateStats', (
 @_set_msg_type(ofproto_v1_3.OFPT_MULTIPART_REQUEST)
 class OFPAggregateStatsRequest(OFPFlowStatsRequestBase):
     def __init__(self, datapath, flags, table_id, out_port, out_group,
-                 cookie, cookie_mask):
+                 cookie, cookie_mask, match):
         super(OFPAggregateStatsRequest, self).__init__(datapath,
                                                        table_id,
                                                        out_port,
                                                        out_group,
                                                        cookie,
-                                                       cookie_mask)
+                                                       cookie_mask,
+                                                       match)
 
 
 @OFPMultipartReply.register_stats_type()
@@ -2595,7 +2612,7 @@ class OFPTableFeaturesStatsReply(OFPMultipartReply):
 @_set_stats_type(ofproto_v1_3.OFPMP_PORT_DESC, OFPPort)
 @_set_msg_type(ofproto_v1_3.OFPT_MULTIPART_REQUEST)
 class OFPPortDescStatsRequest(OFPMultipartRequest):
-    def __init__(self, datapath, flags, port_no):
+    def __init__(self, datapath, flags):
         super(OFPPortDescStatsRequest, self).__init__(datapath, flags)
 
 
@@ -2763,7 +2780,7 @@ class OFPRoleRequest(MsgBase):
         self.role = role
         self.generation_id = generation_id
 
-    def __serialize_body(self):
+    def _serialize_body(self):
         assert self.role is not None
         assert self.generation_id is not None
         msg_pack_into(ofproto_v1_3.OFP_ROLE_REQUEST_PACK_STR,

@@ -14,20 +14,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from openstack.common import cfg
-import logging
+from oslo.config import cfg
 import webob.dec
 
 from gevent import pywsgi
 from routes import Mapper
 from routes.util import URLGenerator
 
-LOG = logging.getLogger('ryu.app.wsgi')
 
 CONF = cfg.CONF
 CONF.register_cli_opts([
-    cfg.StrOpt('wsapi_host', default='', help='webapp listen host'),
-    cfg.IntOpt('wsapi_port', default=8080, help='webapp listen port')
+    cfg.StrOpt('wsapi-host', default='', help='webapp listen host'),
+    cfg.IntOpt('wsapi-port', default=8080, help='webapp listen port')
 ])
 
 HEX_PATTERN = r'0x[0-9a-z]+'
@@ -53,7 +51,6 @@ class ControllerBase(object):
             if attr in kwargs:
                 del kwargs[attr]
 
-        # LOG.debug('kwargs %s', kwargs)
         return getattr(self, action)(req, **kwargs)
 
 
@@ -66,9 +63,6 @@ class WSGIApplication(object):
 
     @webob.dec.wsgify
     def __call__(self, req):
-        # LOG.debug('mapper %s', self.mapper)
-        # LOG.debug('req: %s\n', req)
-        # LOG.debug('\nreq.environ: %s', req.environ)
         match = self.mapper.match(environ=req.environ)
 
         if not match:

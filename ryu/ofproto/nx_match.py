@@ -57,6 +57,7 @@ MF_PACK_STRING_BE32 = '!I'
 MF_PACK_STRING_BE16 = '!H'
 MF_PACK_STRING_8 = '!B'
 MF_PACK_STRING_MAC = '!6s'
+MF_PACK_STRING_IPV6 = '!8H'
 
 _MF_FIELDS = {}
 
@@ -66,6 +67,8 @@ FLOW_N_REGS = 8  # ovs 1.5
 class Flow(object):
     def __init__(self):
         self.in_port = 0
+        self.dl_vlan = 0
+        self.dl_vlan_pcp = 0
         self.dl_src = mac.DONTCARE
         self.dl_dst = mac.DONTCARE
         self.dl_type = 0
@@ -108,7 +111,7 @@ class FlowWildcards(object):
         self.nw_frag_mask = 0
         self.regs_bits = 0
         self.regs_mask = [0] * FLOW_N_REGS
-        self.wildcards = FWW_ALL
+        self.wildcards = ofproto_v1_0.OFPFW_ALL
 
 
 class ClsRule(object):
@@ -119,6 +122,14 @@ class ClsRule(object):
     def set_in_port(self, port):
         self.wc.wildcards &= ~FWW_IN_PORT
         self.flow.in_port = port
+
+    def set_dl_vlan(self, dl_vlan):
+        self.wc.wildcards &= ~ofproto_v1_0.OFPFW_DL_VLAN
+        self.flow.dl_vlan = dl_vlan
+
+    def set_dl_vlan_pcp(self, dl_vlan_pcp):
+        self.wc.wildcards &= ~ofproto_v1_0.OFPFW_DL_VLAN_PCP
+        self.flow.dl_vlan_pcp = dl_vlan_pcp
 
     def set_dl_dst(self, dl_dst):
         self.flow.dl_dst = dl_dst
@@ -314,11 +325,39 @@ class ClsRule(object):
         if not self.wc.wildcards & FWW_DL_TYPE:
             wildcards &= ~ofproto_v1_0.OFPFW_DL_TYPE
 
-        # FIXME: Add support for dl_vlan, fl_vlan_pcp, nw_tos, nw_proto,
-        # nw_src, nw_dst, tp_src and dp_dst to self
+        if self.flow.dl_vlan != 0:
+            wildcards &= ~ofproto_v1_0.OFPFW_DL_VLAN
+
+        if self.flow.dl_vlan_pcp != 0:
+            wildcards &= ~ofproto_v1_0.OFPFW_DL_VLAN_PCP
+
+        if self.flow.nw_tos != 0:
+            wildcards &= ~ofproto_v1_0.OFPFW_NW_TOS
+
+        if self.flow.nw_proto != 0:
+            wildcards &= ~ofproto_v1_0.OFPFW_NW_PROTO
+
+        if self.wc.nw_src_mask != 0 and "01" not in bin(self.wc.nw_src_mask):
+            wildcards &= ~ofproto_v1_0.OFPFW_NW_SRC_MASK
+            maskbits = (bin(self.wc.nw_src_mask).count("0") - 1)
+            wildcards |= (maskbits << ofproto_v1_0.OFPFW_NW_SRC_SHIFT)
+
+        if self.wc.nw_dst_mask != 0 and "01" not in bin(self.wc.nw_dst_mask):
+            wildcards &= ~ofproto_v1_0.OFPFW_NW_DST_MASK
+            maskbits = (bin(self.wc.nw_dst_mask).count("0") - 1)
+            wildcards |= (maskbits << ofproto_v1_0.OFPFW_NW_DST_SHIFT)
+
+        if self.flow.tp_src != 0:
+            wildcards &= ~ofproto_v1_0.OFPFW_TP_SRC
+
+        if self.flow.tp_dst != 0:
+            wildcards &= ~ofproto_v1_0.OFPFW_TP_DST
+
         return (wildcards, self.flow.in_port, self.flow.dl_src,
-                self.flow.dl_dst, 0, 0, self.flow.dl_type,
-                self.flow.nw_tos & IP_DSCP_MASK, 0, 0, 0, 0, 0)
+                self.flow.dl_dst, self.flow.dl_vlan, self.flow.dl_vlan_pcp,
+                self.flow.dl_type, self.flow.nw_tos & IP_DSCP_MASK,
+                self.flow.nw_proto, self.flow.nw_src, self.flow.nw_dst,
+                self.flow.tp_src, self.flow.tp_dst)
 
 
 def _set_nxm_headers(nxm_headers):
@@ -348,11 +387,49 @@ def mf_from_nxm_header(nxm_header):
 
 
 class MFField(object):
+    _FIELDS_HEADERS = {}
+
+    @staticmethod
+    def register_field_header(headers):
+        def _register_field_header(cls):
+            for header in headers:
+                MFField._FIELDS_HEADERS[header] = cls
+            return cls
+        return _register_field_header
+
     def __init__(self, nxm_header, pack_str):
         self.nxm_header = nxm_header
         self.pack_str = pack_str
         self.n_bytes = struct.calcsize(pack_str)
         self.n_bits = self.n_bytes * 8
+
+    @classmethod
+    def parser(cls, buf, offset):
+        (header,) = struct.unpack_from('!I', buf, offset)
+
+        cls_ = MFField._FIELDS_HEADERS.get(header)
+
+        if cls_:
+            field = cls_.field_parser(header, buf, offset)
+        else:
+            # print 'unknown field type'
+            raise
+        field.length = (header & 0xff) + 4
+
+        return field
+
+    @classmethod
+    def field_parser(cls, header, buf, offset):
+        hasmask = (header >> 8) & 1
+        mask = None
+        if hasmask:
+            pack_str = '!' + cls.pack_str[1:] * 2
+            (value, mask) = struct.unpack_from(pack_str, buf,
+                                               offset + 4)
+        else:
+            (value,) = struct.unpack_from(cls.pack_str, buf,
+                                          offset + 4)
+        return cls(header, value, mask)
 
     def _put(self, buf, offset, value):
         ofproto_parser.msg_pack_into(self.pack_str, buf, offset, value)
@@ -387,10 +464,17 @@ class MFField(object):
 
 @_register_make
 @_set_nxm_headers([ofproto_v1_0.NXM_OF_IN_PORT])
+@MFField.register_field_header([ofproto_v1_0.NXM_OF_IN_PORT])
 class MFInPort(MFField):
+    pack_str = MF_PACK_STRING_BE16
+
+    def __init__(self, header, value, mask=None):
+        super(MFInPort, self).__init__(header, MFInPort.pack_str)
+        self.value = value
+
     @classmethod
     def make(cls, header):
-        return cls(header, MF_PACK_STRING_BE16)
+        return cls(header, MFInPort.pack_str)
 
     def put(self, buf, offset, rule):
         return self._put(buf, offset, rule.flow.in_port)
@@ -398,10 +482,18 @@ class MFInPort(MFField):
 
 @_register_make
 @_set_nxm_headers([ofproto_v1_0.NXM_OF_ETH_DST, ofproto_v1_0.NXM_OF_ETH_DST_W])
+@MFField.register_field_header([ofproto_v1_0.NXM_OF_ETH_DST,
+                                ofproto_v1_0.NXM_OF_ETH_DST_W])
 class MFEthDst(MFField):
+    pack_str = MF_PACK_STRING_MAC
+
+    def __init__(self, header, value, mask=None):
+        super(MFEthDst, self).__init__(header, MFEthDst.pack_str)
+        self.value = value
+
     @classmethod
     def make(cls, header):
-        return cls(header, MF_PACK_STRING_MAC)
+        return cls(header, MFEthDst.pack_str)
 
     def put(self, buf, offset, rule):
         if rule.wc.dl_dst_mask:
@@ -413,10 +505,18 @@ class MFEthDst(MFField):
 
 @_register_make
 @_set_nxm_headers([ofproto_v1_0.NXM_OF_ETH_SRC, ofproto_v1_0.NXM_OF_ETH_SRC_W])
+@MFField.register_field_header([ofproto_v1_0.NXM_OF_ETH_SRC,
+                                ofproto_v1_0.NXM_OF_ETH_SRC_W])
 class MFEthSrc(MFField):
+    pack_str = MF_PACK_STRING_MAC
+
+    def __init__(self, header, value, mask=None):
+        super(MFEthSrc, self).__init__(header, MFEthSrc.pack_str)
+        self.value = value
+
     @classmethod
     def make(cls, header):
-        return cls(header, MF_PACK_STRING_MAC)
+        return cls(header, MFEthSrc.pack_str)
 
     def put(self, buf, offset, rule):
         if rule.wc.dl_src_mask:
@@ -428,10 +528,17 @@ class MFEthSrc(MFField):
 
 @_register_make
 @_set_nxm_headers([ofproto_v1_0.NXM_OF_ETH_TYPE])
+@MFField.register_field_header([ofproto_v1_0.NXM_OF_ETH_TYPE])
 class MFEthType(MFField):
+    pack_str = MF_PACK_STRING_BE16
+
+    def __init__(self, header, value, mask=None):
+        super(MFEthType, self).__init__(header, MFEthType.pack_str)
+        self.value = value
+
     @classmethod
     def make(cls, header):
-        return cls(header, MF_PACK_STRING_BE16)
+        return cls(header, MFEthType.pack_str)
 
     def put(self, buf, offset, rule):
         return self._put(buf, offset, rule.flow.dl_type)
@@ -440,10 +547,18 @@ class MFEthType(MFField):
 @_register_make
 @_set_nxm_headers([ofproto_v1_0.NXM_OF_VLAN_TCI,
                    ofproto_v1_0.NXM_OF_VLAN_TCI_W])
+@MFField.register_field_header([ofproto_v1_0.NXM_OF_VLAN_TCI,
+                                ofproto_v1_0.NXM_OF_VLAN_TCI_W])
 class MFVlan(MFField):
+    pack_str = MF_PACK_STRING_BE16
+
+    def __init__(self, header, value, mask=None):
+        super(MFVlan, self).__init__(header, MFVlan.pack_str)
+        self.value = value
+
     @classmethod
     def make(cls, header):
-        return cls(header, MF_PACK_STRING_BE16)
+        return cls(header, MFVlan.pack_str)
 
     def put(self, buf, offset, rule):
         return self.putm(buf, offset, rule.flow.vlan_tci,
@@ -452,10 +567,17 @@ class MFVlan(MFField):
 
 @_register_make
 @_set_nxm_headers([ofproto_v1_0.NXM_OF_IP_TOS])
+@MFField.register_field_header([ofproto_v1_0.NXM_OF_IP_TOS])
 class MFIPDSCP(MFField):
+    pack_str = MF_PACK_STRING_8
+
+    def __init__(self, header, value, mask=None):
+        super(MFIPDSCP, self).__init__(header, MFIPDSCP.pack_str)
+        self.value = value
+
     @classmethod
     def make(cls, header):
-        return cls(header, MF_PACK_STRING_8)
+        return cls(header, MFIPDSCP.pack_str)
 
     def put(self, buf, offset, rule):
         return self._put(buf, offset,
@@ -463,11 +585,20 @@ class MFIPDSCP(MFField):
 
 
 @_register_make
-@_set_nxm_headers([ofproto_v1_0.NXM_NX_TUN_ID, ofproto_v1_0.NXM_NX_TUN_ID_W])
+@_set_nxm_headers([ofproto_v1_0.NXM_NX_TUN_ID,
+                   ofproto_v1_0.NXM_NX_TUN_ID_W])
+@MFField.register_field_header([ofproto_v1_0.NXM_NX_TUN_ID,
+                                ofproto_v1_0.NXM_NX_TUN_ID_W])
 class MFTunId(MFField):
+    pack_str = MF_PACK_STRING_BE64
+
+    def __init__(self, header, value, mask=None):
+        super(MFTunId, self).__init__(header, MFTunId.pack_str)
+        self.value = value
+
     @classmethod
     def make(cls, header):
-        return cls(header, MF_PACK_STRING_BE64)
+        return cls(header, MFTunId.pack_str)
 
     def put(self, buf, offset, rule):
         return self.putm(buf, offset, rule.flow.tun_id, rule.wc.tun_id_mask)
@@ -475,10 +606,18 @@ class MFTunId(MFField):
 
 @_register_make
 @_set_nxm_headers([ofproto_v1_0.NXM_OF_IP_SRC, ofproto_v1_0.NXM_OF_IP_SRC_W])
+@MFField.register_field_header([ofproto_v1_0.NXM_OF_IP_SRC,
+                                ofproto_v1_0.NXM_OF_IP_SRC_W])
 class MFIPSrc(MFField):
+    pack_str = MF_PACK_STRING_BE32
+
+    def __init__(self, header, value, mask=None):
+        super(MFIPSrc, self).__init__(header, MFIPSrc.pack_str)
+        self.value = value
+
     @classmethod
     def make(cls, header):
-        return cls(header, MF_PACK_STRING_BE32)
+        return cls(header, MFIPSrc.pack_str)
 
     def put(self, buf, offset, rule):
         return self.putm(buf, offset, rule.flow.nw_src, rule.wc.nw_src_mask)
@@ -486,10 +625,18 @@ class MFIPSrc(MFField):
 
 @_register_make
 @_set_nxm_headers([ofproto_v1_0.NXM_OF_IP_DST, ofproto_v1_0.NXM_OF_IP_DST_W])
+@MFField.register_field_header([ofproto_v1_0.NXM_OF_IP_DST,
+                                ofproto_v1_0.NXM_OF_IP_DST_W])
 class MFIPDst(MFField):
+    pack_str = MF_PACK_STRING_BE32
+
+    def __init__(self, header, value, mask=None):
+        super(MFIPDst, self).__init__(header, MFIPDst.pack_str)
+        self.value = value
+
     @classmethod
     def make(cls, header):
-        return cls(header, MF_PACK_STRING_BE32)
+        return cls(header, MFIPDst.pack_str)
 
     def put(self, buf, offset, rule):
         return self.putm(buf, offset, rule.flow.nw_dst, rule.wc.nw_dst_mask)
@@ -574,13 +721,35 @@ class MFArpSha(MFField):
         return self._put(buf, offset, rule.flow.arp_sha)
 
 
+class MFIPV6(object):
+    pack_str = MF_PACK_STRING_IPV6
+
+    @classmethod
+    def field_parser(cls, header, buf, offset):
+        hasmask = (header >> 8) & 1
+        if hasmask:
+            pack_string = '!' + cls.pack_str[1:] * 2
+            value = struct.unpack_from(pack_string, buf, offset + 4)
+            return cls(header, list(value[:8]), list(value[8:]))
+        else:
+            value = struct.unpack_from(cls.pack_str, buf, offset + 4)
+            return cls(header, list(value))
+
+
 @_register_make
 @_set_nxm_headers([ofproto_v1_0.NXM_NX_IPV6_SRC,
                    ofproto_v1_0.NXM_NX_IPV6_SRC_W])
-class MFIPV6Src(MFField):
+@MFField.register_field_header([ofproto_v1_0.NXM_NX_IPV6_SRC,
+                   ofproto_v1_0.NXM_NX_IPV6_SRC_W])
+class MFIPV6Src(MFIPV6, MFField):
+    def __init__(self, header, value, mask=None):
+        super(MFIPV6Src, self).__init__(header, MFIPV6Src.pack_str)
+        self.value = value
+        self.mask = mask
+
     @classmethod
     def make(cls, header):
-        return cls(header, '!4I')
+        return cls(header, cls.pack_str)
 
     def put(self, buf, offset, rule):
         return self.putv6(buf, offset,
@@ -591,10 +760,17 @@ class MFIPV6Src(MFField):
 @_register_make
 @_set_nxm_headers([ofproto_v1_0.NXM_NX_IPV6_DST,
                    ofproto_v1_0.NXM_NX_IPV6_DST_W])
-class MFIPV6Dst(MFField):
+@MFField.register_field_header([ofproto_v1_0.NXM_NX_IPV6_DST,
+                   ofproto_v1_0.NXM_NX_IPV6_DST_W])
+class MFIPV6Dst(MFIPV6, MFField):
+    def __init__(self, header, value, mask=None):
+        super(MFIPV6Dst, self).__init__(header, MFIPV6Dst.pack_str)
+        self.value = value
+        self.mask = mask
+
     @classmethod
     def make(cls, header):
-        return cls(header, '!4I')
+        return cls(header, cls.pack_str)
 
     def put(self, buf, offset, rule):
         return self.putv6(buf, offset,

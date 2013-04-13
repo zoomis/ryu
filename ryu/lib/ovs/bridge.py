@@ -19,7 +19,7 @@ slimmed down version of OVSBridge in quantum agent
 """
 
 import functools
-from openstack.common import cfg
+from oslo.config import cfg
 import logging
 
 import ryu.exception as ryu_exc
@@ -30,7 +30,7 @@ LOG = logging.getLogger(__name__)
 
 CONF = cfg.CONF
 CONF.register_opts([
-    cfg.IntOpt('ovsdb_timeout', default=2, help='ovsdb timeout')
+    cfg.IntOpt('ovsdb-timeout', default=2, help='ovsdb timeout')
 ])
 
 

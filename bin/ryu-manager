@@ -26,10 +26,10 @@ monkey.patch_all()
 #   use it
 #
 # NOTE: this modifies sys.path and thus affects the following imports.
-# eg. openstack.common.cfg.
+# eg. oslo.config.cfg.
 import ryu.contrib
 
-from openstack.common import cfg
+from oslo.config import cfg
 import logging
 import sys
 
@@ -41,11 +41,12 @@ from ryu import version
 from ryu.app import wsgi
 from ryu.base.app_manager import AppManager
 from ryu.controller import controller
+from ryu.topology import switches
 
 
 CONF = cfg.CONF
 CONF.register_cli_opts([
-    cfg.ListOpt('app_lists', default=[],
+    cfg.ListOpt('app-lists', default=[],
                 help='application module name to run'),
     cfg.MultiStrOpt('app', positional=True, default=[],
                     help='application module name to run')
@@ -58,11 +59,10 @@ def main():
     log.init_log()
 
     # always enable ofp for now.
-    CONF.app_lists += ['ryu.controller.ofp_handler']
-    CONF.app_lists += CONF.app
+    app_lists = CONF.app_lists + CONF.app + ['ryu.controller.ofp_handler']
 
     app_mgr = AppManager()
-    app_mgr.load_apps(CONF.app_lists)
+    app_mgr.load_apps(app_lists)
     contexts = app_mgr.create_contexts()
     app_mgr.instantiate_apps(**contexts)
 
@@ -77,8 +77,10 @@ def main():
         thr = gevent.spawn_later(0, webapp)
         services.append(thr)
 
-    gevent.joinall(services)
-    app_mgr.close()
+    try:
+        gevent.joinall(services)
+    finally:
+        app_mgr.close()
 
 
 if __name__ == "__main__":

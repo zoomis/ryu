@@ -15,7 +15,7 @@
 # limitations under the License.
 
 import contextlib
-from openstack.common import cfg
+from oslo.config import cfg
 import logging
 import gevent
 import traceback
@@ -44,14 +44,14 @@ LOG = logging.getLogger('ryu.controller.controller')
 
 CONF = cfg.CONF
 CONF.register_cli_opts([
-    cfg.StrOpt('ofp_listen_host', default='', help='openflow listen host'),
-    cfg.IntOpt('ofp_tcp_listen_port', default=ofproto_common.OFP_TCP_PORT,
+    cfg.StrOpt('ofp-listen-host', default='', help='openflow listen host'),
+    cfg.IntOpt('ofp-tcp-listen-port', default=ofproto_common.OFP_TCP_PORT,
                help='openflow tcp listen port'),
-    cfg.IntOpt('ofp_ssl_listen_port', default=ofproto_common.OFP_SSL_PORT,
+    cfg.IntOpt('ofp-ssl-listen-port', default=ofproto_common.OFP_SSL_PORT,
                help='openflow ssl listen port'),
-    cfg.StrOpt('ctl_privkey', default=None, help='controller private key'),
-    cfg.StrOpt('ctl_cert', default=None, help='controller certificate'),
-    cfg.StrOpt('ca_certs', default=None, help='CA certificates')
+    cfg.StrOpt('ctl-privkey', default=None, help='controller private key'),
+    cfg.StrOpt('ctl-cert', default=None, help='controller certificate'),
+    cfg.StrOpt('ca-certs', default=None, help='CA certificates')
 ])
 
 
@@ -65,7 +65,7 @@ class OpenFlowController(object):
         self.server_loop()
 
     def server_loop(self):
-        if CONF.ctl_privkey and CONF.ctl_cert is not None:
+        if CONF.ctl_privkey is not None and CONF.ctl_cert is not None:
             if CONF.ca_certs is not None:
                 server = StreamServer((CONF.ofp_listen_host,
                                        CONF.ofp_ssl_listen_port),
@@ -141,7 +141,7 @@ class Datapath(object):
         self.state = state
         ev = ofp_event.EventOFPStateChange(self)
         ev.state = state
-        self.ofp_brick.send_event_to_observers(ev)
+        self.ofp_brick.send_event_to_observers(ev, state)
 
     def set_version(self, version):
         assert version in self.supported_ofp_version
@@ -170,12 +170,13 @@ class Datapath(object):
                                          version, msg_type, msg_len, xid, buf)
                 #LOG.debug('queue msg %s cls %s', msg, msg.__class__)
                 ev = ofp_event.ofp_msg_to_ev(msg)
-                handlers = self.ofp_brick.get_handlers(ev)
-                for handler in handlers:
-                    if self.state in handler.dispatchers:
-                        handler(ev)
+                self.ofp_brick.send_event_to_observers(ev, self.state)
 
-                self.ofp_brick.send_event_to_observers(ev)
+                handlers = [handler for handler in
+                            self.ofp_brick.get_handlers(ev) if self.state in
+                            handler.dispatchers]
+                for handler in handlers:
+                    handler(ev)
 
                 buf = buf[required_len:]
                 required_len = ofproto_common.OFP_HEADER_SIZE
@@ -196,10 +197,7 @@ class Datapath(object):
                 buf = self.send_q.get()
                 self.socket.sendall(buf)
         finally:
-            q = self.send_q
             self.send_q = None
-            while q.get():
-                pass
 
     def send(self, buf):
         if self.send_q:

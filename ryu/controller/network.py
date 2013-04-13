@@ -26,23 +26,8 @@ from ryu.base import app_manager
 import ryu.exception as ryu_exc
 from ryu.controller import event
 
-LOG = logging.getLogger('ryu.controller.network')
-
-
-class Network(object):
-    def __init__(self, nw_id_unknown=NW_ID_UNKNOWN):
-        self.nw_id_unknown = nw_id_unknown
-        self.networks = {}
-        self.dpids = {}
-        
-        # The following relies on application to make
-        # the necessary assignments
-        self.mac2net = None
-        self.packetHandlerCallback = None
-    
-    def setPacketHandler(self, handler_id):
-        assert self.packetHandlerCallback != None
-        self.packetHandlerCallback(handler_id)
+class MacAddressAlreadyExist(ryu_exc.RyuException):
+    message = 'port (%(dpid)s, %(port)s) has already mac %(mac_address)s'
 
 class EventNetworkDel(event.EventBase):
     def __init__(self, network_id):
@@ -239,7 +224,8 @@ class DPIDs(dict):
         port.mac_address = mac_address
         if port.network_id and port.mac_address:
             self.send_event(EventMacAddress(
-                    dpid, port_no, port.network_id, port.mac_address, True))
+                            dpid, port_no, port.network_id, port.mac_address,
+                            True))
 
     def set_mac(self, network_id, dpid, port_no, mac_address):
         port = self.get_port(dpid, port_no)
@@ -456,9 +442,9 @@ class Network(app_manager.RyuApp):
             # allow external network -> known network id
             return True
 
-        LOG.debug('blocked dpid %s nw_id %s out_port %d out_nw %s'
-                  'external %s',
-                  dpid, nw_id, out_port, out_nw, allow_nw_id_external)
+        self.logger.debug('blocked dpid %s nw_id %s out_port %d out_nw %s'
+                          'external %s',
+                          dpid, nw_id, out_port, out_nw, allow_nw_id_external)
         return False
 
     def get_network(self, dpid, port):

@@ -65,7 +65,7 @@ OFPT_METER_MOD = 29    # Controller/switch message
 OFP_MAX_PORT_NAME_LEN = 16
 OFP_ETH_ALEN = 6
 OFP_ETH_ALEN_STR = str(OFP_ETH_ALEN)
-_OFP_PORT_PACK_STR = 'I4x' + OFP_ETH_ALEN_STR + 'B' + '2x' + \
+_OFP_PORT_PACK_STR = 'I4x' + OFP_ETH_ALEN_STR + 's' + '2x' + \
                      str(OFP_MAX_PORT_NAME_LEN) + 's' + 'IIIIIIII'
 OFP_PORT_PACK_STR = '!' + _OFP_PORT_PACK_STR
 OFP_PORT_SIZE = 64
@@ -406,7 +406,7 @@ OFPFF_NO_PKT_COUNTS = 1 << 3    # Don't keep track of packet count.
 OFPFF_NO_BYT_COUNTS = 1 << 4    # Don't keep track of byte count.
 
 # struct ofp_group_mod
-OFP_GROUP_MOD_PACK_STR = '!HBBI'
+OFP_GROUP_MOD_PACK_STR = '!HBxI'
 OFP_GROUP_MOD_SIZE = 16
 assert (calcsize(OFP_GROUP_MOD_PACK_STR) + OFP_HEADER_SIZE ==
         OFP_GROUP_MOD_SIZE)
@@ -415,6 +415,14 @@ assert (calcsize(OFP_GROUP_MOD_PACK_STR) + OFP_HEADER_SIZE ==
 OFPGC_ADD = 0  # New group.
 OFPGC_MODIFY = 1  # Modify all matching groups.
 OFPGC_DELETE = 2  # Delete all matching groups.
+
+# enum ofp_group
+OFPG_MAX = 0xffffff00  # Last usable group number.
+#Fake groups
+OFPG_ALL = 0xfffffffc  # Represents all groups for group delete commands.
+OFPG_ANY = 0xffffffff  # Wildcard group used only for flow stats requests.
+                       # Selects all flows regardless of group
+                       # (including flows with no group).
 
 # enum ofp_group_type
 OFPGT_ALL = 0  # All (multicast/broadcast) group.
@@ -428,7 +436,7 @@ OFP_BUCKET_SIZE = 16
 assert calcsize(OFP_BUCKET_PACK_STR) == OFP_BUCKET_SIZE
 
 # struct ofp_port_mod
-OFP_PORT_MOD_PACK_STR = '!I4x' + OFP_ETH_ALEN_STR + 'B2xIII4x'
+OFP_PORT_MOD_PACK_STR = '!I4x' + OFP_ETH_ALEN_STR + 's2xIII4x'
 OFP_PORT_MOD_SIZE = 40
 assert (calcsize(OFP_PORT_MOD_PACK_STR) + OFP_HEADER_SIZE ==
         OFP_PORT_MOD_SIZE)
@@ -526,11 +534,11 @@ DESC_STR_LEN_STR = str(DESC_STR_LEN)
 SERIAL_NUM_LEN = 32
 SERIAL_NUM_LEN_STR = str(SERIAL_NUM_LEN)
 OFP_DESC_PACK_STR = '!' + \
-                    DESC_STR_LEN_STR + 'c' + \
-                    DESC_STR_LEN_STR + 'c' + \
-                    DESC_STR_LEN_STR + 'c' + \
-                    SERIAL_NUM_LEN_STR + 'c' + \
-                    DESC_STR_LEN_STR + 'c'
+                    DESC_STR_LEN_STR + 's' + \
+                    DESC_STR_LEN_STR + 's' + \
+                    DESC_STR_LEN_STR + 's' + \
+                    SERIAL_NUM_LEN_STR + 's' + \
+                    DESC_STR_LEN_STR + 's'
 OFP_DESC_SIZE = 1056
 assert calcsize(OFP_DESC_PACK_STR) == OFP_DESC_SIZE
 
@@ -638,7 +646,7 @@ OFP_TABLE_FEATURE_PROP_OXM_SIZE = 4
 assert (calcsize(OFP_TABLE_FEATURE_PROP_OXM_PACK_STR) ==
         OFP_TABLE_FEATURE_PROP_OXM_SIZE)
 
-# struct ofp_port_stats_reuqest
+# struct ofp_port_stats_request
 OFP_PORT_STATS_REQUEST_PACK_STR = '!I4x'
 OFP_PORT_STATS_REQUEST_SIZE = 8
 assert (calcsize(OFP_PORT_STATS_REQUEST_PACK_STR) ==

@@ -24,6 +24,7 @@ from gevent.queue import Queue
 from ryu import utils
 from ryu.controller.handler import register_instance
 from ryu.controller.controller import Datapath
+from ryu.controller.event import EventRequestBase, EventReplyBase
 
 LOG = logging.getLogger('ryu.base.app_manager')
 
@@ -46,6 +47,7 @@ class RyuApp(object):
     Base class for Ryu network application
     """
     _CONTEXTS = {}
+    _EVENTS = []  # list of events to be generated in app
 
     @classmethod
     def context_iteritems(cls):
@@ -61,6 +63,8 @@ class RyuApp(object):
         self.observers = {}
         self.threads = []
         self.events = Queue()
+        self.replies = Queue()
+        self.logger = logging.getLogger(self.name)
         self.threads.append(gevent.spawn(self._event_loop))
 
     def register_handler(self, ev_cls, handler):
@@ -68,15 +72,31 @@ class RyuApp(object):
         self.event_handlers.setdefault(ev_cls, [])
         self.event_handlers[ev_cls].append(handler)
 
-    def register_observer(self, ev_cls, name):
-        self.observers.setdefault(ev_cls, [])
-        self.observers[ev_cls].append(name)
+    def register_observer(self, ev_cls, name, states=None):
+        states = states or []
+        self.observers.setdefault(ev_cls, {})[name] = states
 
     def get_handlers(self, ev):
         return self.event_handlers.get(ev.__class__, [])
 
-    def get_observers(self, ev):
-        return self.observers.get(ev.__class__, [])
+    def get_observers(self, ev, state):
+        observers = []
+        for k, v in self.observers.get(ev.__class__, {}).iteritems():
+            if not state or not v or state in v:
+                observers.append(k)
+
+        return observers
+
+    def send_reply(self, rep):
+        assert isinstance(rep, EventReplyBase)
+        SERVICE_BRICKS[rep.dst].replies.put(rep)
+
+    def send_request(self, req):
+        assert isinstance(req, EventRequestBase)
+        req.sync = True
+        self.send_event(req.dst, req)
+        # going to sleep for the reply
+        return self.replies.get()
 
     def _event_loop(self):
         while True:
@@ -90,6 +110,8 @@ class RyuApp(object):
 
     def send_event(self, name, ev):
         if name in SERVICE_BRICKS:
+            if isinstance(ev, EventRequestBase):
+                ev.src = self.name
             LOG.debug("EVENT %s->%s %s" %
                       (self.name, name, ev.__class__.__name__))
             SERVICE_BRICKS[name]._send_event(ev)
@@ -97,9 +119,16 @@ class RyuApp(object):
             LOG.debug("EVENT LOST %s->%s %s" %
                       (self.name, name, ev.__class__.__name__))
 
-    def send_event_to_observers(self, ev):
-        for observer in self.get_observers(ev):
+    def send_event_to_observers(self, ev, state=None):
+        for observer in self.get_observers(ev, state):
             self.send_event(observer, ev)
+
+    def reply_to_request(self, req, rep):
+        rep.dst = req.src
+        if req.sync:
+            self.send_reply(rep)
+        else:
+            self.send_event(rep.dst, rep)
 
     def close(self):
         """
@@ -176,24 +205,33 @@ class AppManager(object):
             register_app(app)
             self.applications[app_name] = app
 
-        for key, i in SERVICE_BRICKS.items():
+        for i in SERVICE_BRICKS.values():
             for _k, m in inspect.getmembers(i, inspect.ismethod):
-                if hasattr(m, 'observer'):
-                    name = m.observer.split('.')[-1]
-                    if name in SERVICE_BRICKS:
-                        brick = SERVICE_BRICKS[name]
-                        brick.register_observer(m.ev_cls, i.name)
+                if not hasattr(m, 'observer'):
+                    continue
+
+                # name is module name of ev_cls
+                name = m.observer.split('.')[-1]
+                if name in SERVICE_BRICKS:
+                    brick = SERVICE_BRICKS[name]
+                    brick.register_observer(m.ev_cls, i.name, m.dispatchers)
+
+                # allow RyuApp and Event class are in different module
+                for brick in SERVICE_BRICKS.itervalues():
+                    if m.ev_cls in brick._EVENTS:
+                        brick.register_observer(m.ev_cls, i.name,
+                                                m.dispatchers)
 
         for brick, i in SERVICE_BRICKS.items():
             LOG.debug("BRICK %s" % brick)
             for ev_cls, list in i.observers.items():
                 LOG.debug("  PROVIDES %s TO %s" % (ev_cls.__name__, list))
-            for ev_cls, handler in i.event_handlers.items():
+            for ev_cls in i.event_handlers.keys():
                 LOG.debug("  CONSUMES %s" % (ev_cls.__name__,))
 
     def close(self):
         def close_all(close_dict):
-            for app in close_dict:
+            for app in close_dict.values():
                 close_method = getattr(app, 'close', None)
                 if callable(close_method):
                     close_method()
