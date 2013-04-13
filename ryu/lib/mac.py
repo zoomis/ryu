@@ -53,3 +53,8 @@ def haddr_to_bin(string):
 def haddr_bitand(addr, mask):
     return ''.join(chr(ord(a) & ord(m)) for (a, m)
                    in itertools.izip(addr, mask))
+
+def ipaddr_to_str(addr):
+    assert len(addr) == _IP_LEN
+    return '.'.join('%d' % ord(char) for char in addr)
+

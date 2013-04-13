@@ -825,6 +825,7 @@ def get_all_switch(app):
 
 
 def get_link(app, dpid=None):
+    print 'request'
     rep = app.send_request(event.EventLinkRequest(dpid))
     return rep.links
 
