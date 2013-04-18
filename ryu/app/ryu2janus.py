@@ -27,7 +27,7 @@ from ryu.controller import ofp_event
 from ryu.controller.handler import MAIN_DISPATCHER, CONFIG_DISPATCHER
 from ryu.controller.handler import set_ev_cls
 from ryu.ofproto import ofproto_v1_0
-from ryu.lib.mac import haddr_to_str
+from ryu.lib.mac import haddr_to_str, ipaddr_to_str
 from janus.network.of_controller.janus_of_consts import JANEVENTS, JANPORTREASONS
 from janus.network.of_controller.event_contents import EventContents
 
@@ -114,14 +114,18 @@ class Ryu2JanusForwarding(app_manager.RyuApp):
         contents.set_dl_src(haddr_to_str(dl_src))
         contents.set_eth_type(_eth_type)
 
-        # Comment for now, used for arp-less stuff later
-        #if _eth_type == 0x806: # ARP
-        #    HTYPE, PTYPE, HLEN, PLEN, OPER, SHA, SPA, THA, TPA = struct.unpack_from('!HHbbH6s4s6s4s', buffer(msg.data), 14)
-        #    contents.set_arp_oper(OPER)
-        #    contents.set_arp_sha(haddr_to_str(SHA))
-        #    contents.set_arp_spa(ipaddr_to_str(SPA))
-        #    contents.set_arp_tha(haddr_to_str(THA))
-        #    contents.set_arp_tpa(ipaddr_to_str(TPA))
+        if _eth_type == 0x806: # ARP
+            HTYPE, PTYPE, HLEN, PLEN, OPER, SHA, SPA, THA, TPA = struct.unpack_from('!HHbbH6s4s6s4s', buffer(msg.data), 14)
+            contents.set_arp_htype(HTYPE)
+            contents.set_arp_ptype(PTYPE)
+            contents.set_arp_hlen(HLEN)
+            contents.set_arp_plen(PLEN)
+            contents.set_arp_oper(OPER)
+
+            contents.set_arp_sha(haddr_to_str(SHA))
+            contents.set_arp_spa(ipaddr_to_str(SPA))
+            contents.set_arp_tha(haddr_to_str(THA))
+            contents.set_arp_tpa(ipaddr_to_str(TPA))
 
         packet_in_url = '/of_event/%s' % JANEVENTS.JAN_EV_PACKETIN
         method = 'POST'

@@ -161,7 +161,7 @@ class NetworkController(ControllerBase):
         mac_list = []
         for macAddr in self.mac2net.list_macs(network_id):
             mac_list.append(haddr_to_str(macAddr))
-            
+
         body = json.dumps(mac_list)
         return Response(content_type='application/json', body=body)
 
@@ -176,19 +176,18 @@ class NetworkController(ControllerBase):
             return Response(status=409)
         else:
             return Response(status=200)
-    
+
     def add_ip(self, req, mac, ip, dpid, port_id, **_kwargs):
-	try:
-	    self.mac2port.dpid_add(int(dpid, 16))
+        try:
+            self.mac2port.dpid_add(int(dpid, 16))
             self.mac2port.port_add(int(dpid, 16), int(port_id), haddr_to_bin(mac), ipaddr_to_bin(ip))
-	except ValueError:
-	    print 'Invalid ip address format. Check the ip you are registering: %s' % ip
-	    return Response(status=500)
-	except:
-	    return Response(status=500)
+        except ValueError:
+            print 'Invalid ip address format. Check the ip you are registering: %s' % ip
+            return Response(status=500)
+        except:
+            return Response(status=500)
         else:
-	    return Response(status=200)
-        
+            return Response(status=200)
 
     def add_iface(self, req, network_id, iface_id, **_kwargs):
         try:
@@ -424,7 +423,7 @@ class FlowVisorController(ControllerBase):
 
             response = self.unassignNetwork(req, network_id)
             status = response.status_code
-        
+
         if (status == 200) and (sliceName != self.fv_cli.defaultSlice):
             self.fv_cli.slice2nw_add(sliceName, network_id)
             self.api_db.assignNetToSlice(sliceName, network_id)
@@ -449,7 +448,7 @@ class FlowVisorController(ControllerBase):
                         if (status == 500):
                             break
 
-                        # Now install rule for the target switch 
+                        # Now install rule for the target switch
                         body = self.fv_cli.addFlowSpace(sliceName, dpid, port, haddr_to_str(mac))
                         if (body.find("success") == -1):
                             # Error occured while attempting to install FV rule
@@ -459,7 +458,7 @@ class FlowVisorController(ControllerBase):
                         # Keep track of installed rules related to network
                         self.fv_cli.addFlowSpaceID(dpid, port, mac, int(body[9:]))
                         self.api_db.addFlowSpaceID(hex(dpid), port, haddr_to_str(mac), int(body[9:]))
-                            
+
                 if (status == 500):
                     break
 
@@ -597,9 +596,9 @@ class StatsController(ControllerBase):
 
     def get_dpids(self, req, **_kwargs):
         dps = self.dpset.dps.keys()
-	dpstr = []
-	for dp in dps:
-	    dpstr.append(dpid_to_str(dp))
+        dpstr = []
+        for dp in dps:
+            dpstr.append(dpid_to_str(dp))
         body = json.dumps(dpstr)
         return (Response(content_type='application/json', body=body))
 
@@ -722,7 +721,7 @@ class DiscoveryController(ControllerBase):
         return json.dumps(response)
 
     def get_links(self, req, **_kwargs):
-	body = self._format_response(self.link_set.get_items())
+        body = self._format_response(self.link_set.get_items())
         return (Response(content_type='application/json', body=body))
 
     def get_switch_links(self, req, dpid):
@@ -770,7 +769,7 @@ class restapi(app_manager.RyuApp):
         self.data['device'] = self.device
 
         mapper = wsgi.mapper
-        
+
         self.is64bit = (sys.maxsize > 2**32)
 
         # Change packet handler
@@ -778,11 +777,11 @@ class restapi(app_manager.RyuApp):
                                                 'mac2net' : self.mac2net,
                                                 'api_db' : self.api_db,
                                                 'mac2port' : self.mac2port }
-        
+
         mapper.connect('networks', '/v1.0/packethandler/{handler_id}',
                        controller=NetworkController, action='setPacketHandler',
                        conditions=dict(method=['PUT']))
-        
+
         uri = '/v1.0/networks'
         mapper.connect('networks', uri,
                        controller=NetworkController, action='lists',
@@ -825,7 +824,7 @@ class restapi(app_manager.RyuApp):
         mapper.connect('networks', uri + '/iface/{iface_id}',
                        controller=NetworkController, action='del_iface',
                        conditions=dict(method=['DELETE']))
-            
+
         # Broadcast-less related APIs
         mapper.connect('networks', uri + '/macipportdp/{mac}/{ip}/{dpid}_{port_id}',
                        controller=NetworkController, action='add_ip',
@@ -897,7 +896,7 @@ class restapi(app_manager.RyuApp):
         mapper.connect('port_bond', uri + '/{dpid}_{network_id}',
                        controller=PortBondController, action='create_bond',
                        conditions=dict(method=['POST']))
-    
+
         mapper.connect('port_bond', uri + '/{bond_id}',
                        controller=PortBondController, action='delete_bond',
                        conditions=dict(method=['DELETE']))
@@ -1017,17 +1016,17 @@ class restapi(app_manager.RyuApp):
             d = self.device[src_str]
             # Update attachment point
             aps = d['attachmentPoint']
-    #		exist = None
-    #		for ap in aps:
-    #			if ap['switchDPID'] == dpid_str and ap['port'] == msg.in_port:
-    #				exist = ap
-    #				break
+    #        exist = None
+    #        for ap in aps:
+    #            if ap['switchDPID'] == dpid_str and ap['port'] == msg.in_port:
+    #                exist = ap
+    #                break
 
-    #		if exist is None:
-    #			ap = {}
-    #			ap['switchDPID'] = dpid_str
-    #			ap['port'] = msg.in_port
-    #			aps.append(ap)
+    #        if exist is None:
+    #            ap = {}
+    #            ap['switchDPID'] = dpid_str
+    #            ap['port'] = msg.in_port
+    #            aps.append(ap)
 
             # Update ip information
             if _eth_type == 0x0800:
@@ -1038,7 +1037,7 @@ class restapi(app_manager.RyuApp):
                     ipd.append(src_ip_str)
                 #LOG.info("IPv4 update %s for %s", src_ip_str, src_str )
 
-	
+
     # edit(eliot)
     def port_status_handler(self, ev):
         msg = ev.msg
@@ -1049,7 +1048,7 @@ class restapi(app_manager.RyuApp):
         dpid_str = dpid_to_str(datapath.id)
 
         if reason == ofproto.OFPPR_DELETE:
-		#LOG.info("rest port deleted %s(%s)", dpid_str, port_no)
+        #LOG.info("rest port deleted %s(%s)", dpid_str, port_no)
             exist = None
             for mac in self.device.keys():
                 aps = self.device[mac]['attachmentPoint']
@@ -1060,7 +1059,7 @@ class restapi(app_manager.RyuApp):
 
             if not exist is None:
                 del self.device[exist]
-	        
+
         elif reason == ofproto.OFPPR_MODIFY:
             LOG.info("rest port modified %s", port_no)
         else:
