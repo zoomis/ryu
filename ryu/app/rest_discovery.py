@@ -1,5 +1,4 @@
 # Copyright (C) 2012 Nippon Telegraph and Telephone Corporation.
-# Copyright (C) 2012 Isaku Yamahata <yamahata at private email ne jp>
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,24 +14,31 @@
 # limitations under the License.
 
 import httplib
-import json
 import logging
+import struct
 import time
 
-from ryu.app.wsapi import wsapi
-from ryu.app.wsapi import WSPathStaticString
-from ryu.app.wspath import DPID
-from ryu.app.wspath import WSPathSwitch
+import json
+from webob import Response
+
 from ryu.base import app_manager
-from ryu.controller import dpset
+from ryu.controller import network
 from ryu.controller import link_set
+from ryu.controller import dpset
+from ryu.lib.dpid import dpid_to_str
 from ryu.lib import dpid as lib_dpid
+from ryu.lib.mac import haddr_to_str
+from ryu.app.wsgi import ControllerBase, WSGIApplication
 
 
-LOG = logging.getLogger(__name__)
+LOG = logging.getLogger('ryu.app.rest_savi')
 
+## TODO:XXX
+## define db interface and store those information into db
 
-# REST API for discovery status
+# REST API
+
+## Retrieve topology
 #
 # get all the links
 # GET /v1.0/topology/links
@@ -40,24 +46,11 @@ LOG = logging.getLogger(__name__)
 # get the links connected <dpid>
 # GET /v1.0/topology/switch/dpid>/links
 #
-# where
-# <dpid>: datapath id in 16 hex
-
-
-class DiscoveryController(app_manager.RyuApp):
-    _CONTEXTS = {
-        'dpset': dpset.DPSet,
-        'link_set': link_set.LinkSet,
-        }
-
-    def __init__(self, *args, **kwargs):
-        super(DiscoveryController, self).__init__(*args, **kwargs)
-        self.dpset = kwargs['dpset']
-        self.link_set = kwargs['link_set']
-
-        self.ws = wsapi()
-        self.api = self.ws.get_version('1.0')
-        self._register()
+class DiscoveryController(ControllerBase):
+    def __init__(self, req, link, data, **config):
+        super(DiscoveryController, self).__init__(req, link, data, **config)
+        self.dpset = data['dpset']
+        self.link_set = data['link_set']
 
     @staticmethod
     def _format_link(link, timestamp, now):
@@ -78,28 +71,47 @@ class DiscoveryController(app_manager.RyuApp):
         }
         return json.dumps(response)
 
-    def get_links(self, request, _data):
-        request.setHeader('Content-Type', 'application/json')
-        return self._format_response(self.link_set.get_items())
+    def get_links(self, req, **_kwargs):
+	body = self._format_response(self.link_set.get_items())
+        return (Response(content_type='application/json', body=body))
 
-    def get_switch_links(self, request, data):
-        request.setHeader('Content-Type', 'application/json')
-        dpid = data[DPID]
-        if self.dpset.get(dpid) is None:
-            request.setResponseCode(httplib.NOT_FOUND)
-            return 'dpid %s is not founf' % dpid
+    def get_switch_links(self, req, dpid):
+        dp = self.dpset.get(int(dpid,16))
+        if dp is None:
+            body = 'dpid %s is not found\n' % dp
+            return Response(status=httplib.NOT_FOUND, body=body)
 
-        return self._format_response(self.link_set.get_items(dpid))
+        body = self._format_response(self.link_set.get_items(int(dpid,16)))
+        return (Response(content_type='application/json', body=body))
 
-    def _register(self):
-        path_topology = (WSPathStaticString('topology'), )
+class RestDiscoveryApi(app_manager.RyuApp):
+    _CONTEXTS = {
+        'link_set': link_set.LinkSet,
+        'wsgi': WSGIApplication
+    }
 
-        path_links = path_topology + (WSPathStaticString('links'), )
-        self.api.register_request(self.get_links, 'GET', path_links,
-                                  'Get list of links.')
+    def __init__(self, *args, **kwargs):
+        super(RestDiscoveryApi, self).__init__(*args, **kwargs)
+        self.dpset = kwargs['dpset']
+        self.link_set = kwargs['link_set']
+        wsgi = kwargs['wsgi']
+        self.waiters = {}
+        self.data = {}
 
-        path_switch_links = path_topology + (WSPathStaticString('switch'),
-                                             WSPathSwitch(DPID),
-                                             WSPathStaticString('links'))
-        self.api.register_request(self.get_switch_links, 'GET',
-                                  path_switch_links, 'Get list of links.')
+        self.data['dpset'] = self.dpset
+        self.data['link_set'] = self.link_set
+        self.data['waiters'] = self.waiters
+ 
+        mapper = wsgi.mapper
+
+        wsgi.registory['DiscoveryController'] = self.data
+        path = '/topology'
+        uri = path + '/links'
+        mapper.connect('topology', uri,
+                       controller=DiscoveryController, action='get_links',
+                       conditions=dict(method=['GET']))
+
+        uri = path + '/switch/{dpid}/links'
+        mapper.connect('topology', uri,
+                       controller=DiscoveryController, action='get_switch_links',
+                       conditions=dict(method=['GET']))
