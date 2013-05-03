@@ -19,6 +19,7 @@ import logging
 import struct
 import httplib
 import json
+import gflags
 
 from ryu.base import app_manager
 from ryu.controller import mac_to_port
@@ -30,6 +31,10 @@ from ryu.lib.mac import haddr_to_str, ipaddr_to_str
 from janus.network.of_controller.janus_of_consts import JANEVENTS, JANPORTREASONS
 from janus.network.of_controller.event_contents import EventContents
 
+FLAGS = gflags.FLAGS
+gflags.DEFINE_string('janus_host', '127.0.0.1', 'Janus host IP address')
+gflags.DEFINE_integer('janus_port', '8090', 'Janus admin API port')
+
 LOG = logging.getLogger('ryu.app.ryu2janus')
 
 class Ryu2JanusForwarding(app_manager.RyuApp):
@@ -40,8 +45,8 @@ class Ryu2JanusForwarding(app_manager.RyuApp):
         self.mac_to_port = {}
 
         # Janus address
-        self.host = '127.0.0.1'
-        self.port = 8090
+        self.host = FLAGS.janus_host
+        self.port = FLAGS.janus_port
         self.url_prefix = '/v1/network'
 
     def _forward2Controller(self, method, url, body=None, headers=None):
