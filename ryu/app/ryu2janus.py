@@ -33,7 +33,7 @@ from janus.network.of_controller.event_contents import EventContents
 
 FLAGS = gflags.FLAGS
 gflags.DEFINE_string('janus_host', '127.0.0.1', 'Janus host IP address')
-gflags.DEFINE_integer('janus_port', '8090', 'Janus admin API port')
+gflags.DEFINE_integer('janus_port', '8091', 'Janus admin API port')
 
 LOG = logging.getLogger('ryu.app.ryu2janus')
 
@@ -47,7 +47,7 @@ class Ryu2JanusForwarding(app_manager.RyuApp):
         # Janus address
         self.host = FLAGS.janus_host
         self.port = FLAGS.janus_port
-        self.url_prefix = '/v1/network'
+        self.url_prefix = '/v1.0/network'
 
     def _forward2Controller(self, method, url, body=None, headers=None):
         conn = httplib.HTTPConnection(self.host, self.port)
@@ -90,7 +90,7 @@ class Ryu2JanusForwarding(app_manager.RyuApp):
             raise
 
         port_status_url = '/of_event/%s' % JANEVENTS.JAN_EV_PORTSTATUS
-        body = "{'datapath_id': %s, 'reason': %s, 'port': %s}" % (msg.datapath.id, reason_id, port_no)
+        body = json.dumps({'datapath_id': msg.datapath.id, 'reason': reason_id, 'port': port_no})
         header = {"Content-Type": "application/json"}
 
         url = self.url_prefix + port_status_url
