@@ -213,9 +213,10 @@ class PacketController(ControllerBase):
                              haddr_to_bin(SHA), ipaddr_to_bin(SPA),
                              haddr_to_bin(THA), ipaddr_to_bin(TPA))
 
+            datapath.send_packet_out(actions=actions, data=mybuffer)
         else:
-            mybuffer = None
-        datapath.send_packet_out(actions=actions, data=mybuffer)
+            datapath.send_packet_out(buffer_id, in_port, actions)
+
         return Response(status=200)
 
     def drop_packet(self, req, dpid, buffer_id, in_port):
