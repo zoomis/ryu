@@ -14,6 +14,11 @@
 # limitations under the License.
 
 import logging
+import ctypes
+import struct
+import datetime
+import calendar
+import gflags
 
 import json
 from webob import Response
@@ -25,7 +30,9 @@ from ryu.controller.handler import MAIN_DISPATCHER
 from ryu.controller.handler import set_ev_cls
 from ryu.ofproto import ofproto_v1_0
 from ryu.lib import ofctl_v1_0
+from ryu.lib.mac import haddr_to_bin, ipaddr_to_bin
 from ryu.app.wsgi import ControllerBase, WSGIApplication
+from janus.network.of_controller import event_contents
 
 
 LOG = logging.getLogger('ryu.app.ofctl_rest')
@@ -163,7 +170,13 @@ class PacketController(ControllerBase):
         in_port = int(in_port)
 
         try:
-            out_port_list = eval(req.body)
+            #out_port_list = eval(req.body)
+            output_dict = eval(req.body)
+            out_port_list = output_dict.get('out_port_list')
+            mydata = output_dict.get('data')
+            assert type(output_dict) is dict
+            #TODO: put assert for mydata, but sometimes data might be Null
+            #assert type(mydata) is str
             assert type(out_port_list) is list
         except SyntaxError:
             LOG.debug('invalid syntax %s', req.body)
@@ -177,10 +190,33 @@ class PacketController(ControllerBase):
         for out_port in out_port_list:
             actions.append(datapath.ofproto_parser.OFPActionOutput(out_port))
 
-        out = datapath.ofproto_parser.OFPPacketOut(
-            datapath=datapath, buffer_id=buffer_id, in_port=in_port,
-            actions=actions)
-        datapath.send_msg(out)
+        if mydata is not None:
+            mydata = eval(mydata)
+            src = mydata.get(event_contents.DL_SRC)
+            dst = mydata.get(event_contents.DL_DST)
+            _eth_type = mydata.get(event_contents.ETH_TYPE)
+            HTYPE = mydata.get(event_contents.ARP_HTYPE)
+            PTYPE = mydata.get(event_contents.ARP_PTYPE)
+            HLEN = mydata.get(event_contents.ARP_HLEN)
+            PLEN = mydata.get(event_contents.ARP_PLEN)
+            OPER = mydata.get(event_contents.ARP_OPER)
+            SPA = mydata.get(event_contents.ARP_SPA)
+            SHA = mydata.get(event_contents.ARP_SHA)
+            TPA = mydata.get(event_contents.ARP_TPA)
+            THA = mydata.get(event_contents.ARP_THA)
+
+            mybuffer = ctypes.create_string_buffer(42)
+
+            struct.pack_into('!6s6sHHHbbH6s4s6s4s',
+                             mybuffer, 0, haddr_to_bin(src), haddr_to_bin(dst),
+                             _eth_type, HTYPE, PTYPE, HLEN, PLEN, OPER,
+                             haddr_to_bin(SHA), ipaddr_to_bin(SPA),
+                             haddr_to_bin(THA), ipaddr_to_bin(TPA))
+
+            datapath.send_packet_out(actions=actions, data=mybuffer)
+        else:
+            datapath.send_packet_out(buffer_id, in_port, actions)
+
         return Response(status=200)
 
     def drop_packet(self, req, dpid, buffer_id, in_port):
