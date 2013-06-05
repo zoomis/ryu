@@ -188,7 +188,7 @@ class PacketController(ControllerBase):
 
         actions = []
         for out_port in out_port_list:
-            actions.append(datapath.ofproto_parser.OFPActionOutput(out_port))
+            actions.append(datapath.ofproto_parser.OFPActionOutput(int(out_port)))
 
         if mydata is not None:
             mydata = eval(mydata)
@@ -212,11 +212,10 @@ class PacketController(ControllerBase):
                              _eth_type, HTYPE, PTYPE, HLEN, PLEN, OPER,
                              haddr_to_bin(SHA), ipaddr_to_bin(SPA),
                              haddr_to_bin(THA), ipaddr_to_bin(TPA))
-
             datapath.send_packet_out(actions=actions, data=mybuffer)
         else:
-            datapath.send_packet_out(buffer_id, in_port, actions)
-
+            datapath.send_packet_out(int(buffer_id), int(in_port), actions=actions, data=None)
+ 
         return Response(status=200)
 
     def drop_packet(self, req, dpid, buffer_id, in_port):
@@ -226,7 +225,7 @@ class PacketController(ControllerBase):
 
         datapath = self.dpset.get(dpid)
         assert datapath is not None
-
+        LOG.info('\nthe packet is going to be dropped. dpid=%s, in_port=%s\n', dpid, in_port)
         datapath.send_packet_out(buffer_id, in_port, [])
         return Response(status=200)
 
